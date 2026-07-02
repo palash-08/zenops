@@ -1,17 +1,21 @@
-import os
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 import sys
 
-# Get the absolute path to the root directory (ZenOpsV1)
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))from pathlib import Path
-ENV_PATH = os.path.join(ROOT_DIR, ".env")
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-if ENV_PATH.exists():
-    print(f"Found .env at {ENV_PATH}")
-else:
-    print(f"❌ Error: .env file not found at {ENV_PATH} - Please create one and enter the relevant details")
+# Root of the repository (ZenOpsV1/)
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Path to the .env file
+ENV_PATH = ROOT_DIR / ".env"
+
+if not ENV_PATH.exists():
+    print(f"❌ Error: .env file not found at {ENV_PATH}")
+    print("Please create a .env file in the project root.")
     sys.exit(1)
+
+print(f"✅ Found .env at {ENV_PATH}")
+
 
 class Settings(BaseSettings):
     database_url: str
@@ -20,7 +24,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
-        extra="ignore"
+        extra="ignore",
     )
+
 
 settings = Settings()
