@@ -14,7 +14,7 @@ async def lifespan(app: FastAPI):
         print(f"❌ Failed to connect to the database: {e}")
     
     yield  
-    # Shutdown Code come here (TODO)
+    # Shutdown Code comes here (TODO)
 
 app = FastAPI(title="ZenOps Backend", lifespan=lifespan)
 
