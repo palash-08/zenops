@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from models.server import Server
-from models.server_inventory import ServerInventory
+from models.inventory import ServerInventory
 
 
 class ServerRepository:
