@@ -135,6 +135,36 @@ class ZenGroup(app_commands.Group):
         super().__init__(name="zen", description="ZenOps orchestration commands")
         self.backend = BackendClient()
 
+    def _resolve_server(self, servers: list, server_arg: str = None, for_routing: bool = False):
+        if len(servers) == 0:
+            return None, _create_embed(
+                "No Servers Found",
+                "No servers are currently registered.\nPlease run `/zen register` to add one.",
+                discord.Color.yellow()
+            )
+            
+        if len(servers) == 1:
+            return servers[0], None
+            
+        if not server_arg:
+            if for_routing:
+                desc = "Multiple servers are currently registered.\n\nAutomatic routing is not available yet.\n\nRegistered servers:\n\n"
+                for s in servers:
+                    desc += f"• {s['name']}\n"
+                return None, _create_embed("Routing Not Implemented", desc, discord.Color.yellow())
+            else:
+                return None, _create_embed(
+                    "Multiple Servers Found",
+                    "Multiple servers are registered. Please specify the server name or UUID.",
+                    discord.Color.yellow()
+                )
+                
+        for s in servers:
+            if s["id"] == server_arg or str(s["id"]).startswith(server_arg) or s["name"].lower() == server_arg.lower():
+                return s, None
+                
+        return None, _create_embed("Server Not Found", f"Server '{server_arg}' not found.", discord.Color.red())
+
     @app_commands.command(name="register", description="Guide the user through registering a new VPS")
     async def register(self, interaction: discord.Interaction):
         # We cannot defer here because we are sending a modal
@@ -150,30 +180,11 @@ class ZenGroup(app_commands.Group):
             # 1. Fetch all registered servers
             servers = await self.backend.get_servers()
             
-            # 2. Check server count
-            if len(servers) == 0:
-                embed = _create_embed(
-                    "No Servers Found",
-                    "No servers are currently registered.\nPlease run `/zen register` to add one.",
-                    discord.Color.yellow()
-                )
-                await interaction.followup.send(embed=embed)
+            # 2. Resolve target server
+            target_server, error_embed = self._resolve_server(servers, None, for_routing=True)
+            if error_embed:
+                await interaction.followup.send(embed=error_embed)
                 return
-                
-            if len(servers) > 1:
-                desc = "Multiple servers are currently registered.\n\nAutomatic routing is not available yet.\n\nRegistered servers:\n\n"
-                for s in servers:
-                    desc += f"• {s['name']}\n"
-                embed = _create_embed(
-                    "Routing Not Implemented",
-                    desc,
-                    discord.Color.yellow()
-                )
-                await interaction.followup.send(embed=embed)
-                return
-                
-            # 3. Exactly one server exists
-            target_server = servers[0]
             
             # 4. Execute the prompt
             response_data = await self.backend.execute_prompt(
@@ -217,7 +228,7 @@ class ZenGroup(app_commands.Group):
             if e.response.status_code == 500:
                 embed = _create_embed("Execution Failed", "Backend returned an internal server error (HTTP 500).", discord.Color.red())
             elif e.response.status_code == 502:
-                embed = _create_embed("Execution Failed", "Backend is unavailable or returning Bad Gateway (HTTP 502).", discord.Color.red())
+                embed = _create_embed("Execution Failed", "Gateway is unavailable, or the assistant returned an invalid/malformed response (HTTP 502).", discord.Color.red())
             else:
                 embed = _create_embed("Execution Failed", f"Backend returned an error: HTTP {e.response.status_code}", discord.Color.red())
             await interaction.followup.send(embed=embed)
@@ -246,40 +257,12 @@ class ZenGroup(app_commands.Group):
             # 1. Fetch all registered servers
             servers = await self.backend.get_servers()
             
-            if len(servers) == 0:
-                embed = _create_embed(
-                    "No Servers Found",
-                    "No servers are currently registered.\nPlease run `/zen register` to add one.",
-                    discord.Color.yellow()
-                )
-                await interaction.followup.send(embed=embed)
+            target_server, error_embed = self._resolve_server(servers, server, for_routing=False)
+            if error_embed:
+                await interaction.edit_original_response(embed=error_embed)
                 return
-                
-            target_server = None
-            if len(servers) == 1:
-                target_server = servers[0]
-            else:
-                if not server:
-                    embed = _create_embed(
-                        "Multiple Servers Found",
-                        "Multiple servers are registered. Please specify the server name or UUID.",
-                        discord.Color.yellow()
-                    )
-                    await interaction.followup.send(embed=embed)
-                    return
-                
-                # server lookup logic
-                for s in servers:
-                    if s["id"] == server or str(s["id"]).startswith(server) or s["name"].lower() == server.lower():
-                        target_server = s
-                        break
-                        
-                if not target_server:
-                    embed = _create_embed("Server Not Found", f"Server '{server}' not found.", discord.Color.red())
-                    await interaction.followup.send(embed=embed)
-                    return
 
-            msg = await interaction.followup.send("🔍 Discovering infrastructure...")
+            await interaction.edit_original_response(content="🔍 Discovering infrastructure...")
             
             inventory_data = await self.backend.run_discovery(target_server["id"])
             
@@ -293,7 +276,7 @@ class ZenGroup(app_commands.Group):
             embed.add_field(name="Hostname", value=hostname, inline=False)
             
             services = inventory_data.get("services", {})
-            services_text = "\n".join([f"• {k.capitalize()}" for k, v in services.items() if v])
+            services_text = "\n".join([f"• {k.replace('_', ' ').title()}" for k, v in services.items() if v])
             if not services_text:
                 services_text = "No services detected."
             
@@ -304,32 +287,32 @@ class ZenGroup(app_commands.Group):
             
             embed.set_footer(text="Infrastructure inventory updated successfully.")
             
-            await msg.edit(content=None, embed=embed)
+            await interaction.edit_original_response(content=None, embed=embed)
             
         except httpx.HTTPStatusError as e:
             traceback.print_exc()
             if e.response.status_code == 500:
-                embed = _create_embed("Execution Failed", "Backend returned an internal server error or invalid JSON (HTTP 500).", discord.Color.red())
+                embed = _create_embed("Execution Failed", "Backend returned an internal server error (HTTP 500).", discord.Color.red())
             elif e.response.status_code == 502:
-                embed = _create_embed("Execution Failed", "Backend is unavailable or returning Bad Gateway (HTTP 502).", discord.Color.red())
+                embed = _create_embed("Execution Failed", "Gateway is unavailable, or the assistant returned an invalid/malformed response (HTTP 502).", discord.Color.red())
             else:
                 embed = _create_embed("Execution Failed", f"Backend returned an error: HTTP {e.response.status_code}", discord.Color.red())
-            await interaction.followup.send(embed=embed)
+            await interaction.edit_original_response(content=None, embed=embed)
             
         except httpx.TimeoutException:
             traceback.print_exc()
             embed = _create_embed("Network Timeout", "The request to the backend timed out.", discord.Color.red())
-            await interaction.followup.send(embed=embed)
+            await interaction.edit_original_response(content=None, embed=embed)
             
         except httpx.RequestError as e:
             traceback.print_exc()
             embed = _create_embed("Network Error", f"Failed to communicate with the backend:\n{e}", discord.Color.red())
-            await interaction.followup.send(embed=embed)
+            await interaction.edit_original_response(content=None, embed=embed)
             
         except Exception as e:
             traceback.print_exc()
             embed = _create_embed("Unexpected Error", f"An unexpected error occurred:\n{e}", discord.Color.red())
-            await interaction.followup.send(embed=embed)
+            await interaction.edit_original_response(content=None, embed=embed)
 
 
 class ZenCog(commands.Cog):

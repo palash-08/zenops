@@ -1,9 +1,35 @@
 import uuid
+import json
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from repositories.server_repository import ServerRepository
 from services.openclaw_client import OpenClawClient, OpenClawError
+from models.inventory import ServerInventory
+
+DISCOVERY_PROMPT = (
+    "You are running directly on the managed Linux server.\n"
+    "Inspect this machine.\n"
+    "Identify the major infrastructure software that is installed or actively running.\n"
+    "Return ONLY valid JSON.\n"
+    "Example:\n"
+    "{\n"
+    "  \"hostname\": \"instance-20250711-1158\",\n"
+    "  \"summary\": \"Ubuntu production server running Docker, Nginx and Pterodactyl.\",\n"
+    "  \"services\": {\n"
+    "    \"docker\": true,\n"
+    "    \"nginx\": true,\n"
+    "    \"postgresql\": true,\n"
+    "    \"redis\": true,\n"
+    "    \"pterodactyl\": true\n"
+    "  }\n"
+    "}\n"
+    "Requirements:\n"
+    "- Return JSON only.\n"
+    "- No markdown.\n"
+    "- No explanations.\n"
+    "- No additional text."
+)
 
 
 class AgentService:
@@ -40,32 +66,8 @@ class AgentService:
         finally:
             await client.close()
 
-    async def run_discovery(self, server_id: uuid.UUID) -> dict:
-        import json
-        from models.inventory import ServerInventory
-        
-        prompt = (
-            "You are running directly on the managed Linux server.\n"
-            "Inspect this machine.\n"
-            "Identify the major infrastructure software that is installed or actively running.\n"
-            "Return ONLY valid JSON.\n"
-            "Example:\n"
-            "{\n"
-            "  \"hostname\": \"instance-20250711-1158\",\n"
-            "  \"summary\": \"Ubuntu production server running Docker, Nginx and Pterodactyl.\",\n"
-            "  \"services\": {\n"
-            "    \"docker\": true,\n"
-            "    \"nginx\": true\n"
-            "  }\n"
-            "}\n"
-            "Requirements:\n"
-            "- Return JSON only.\n"
-            "- No markdown.\n"
-            "- No explanations.\n"
-            "- No additional text."
-        )
-        
-        response_data = await self.execute_prompt(server_id, prompt)
+    async def run_discovery(self, server_id: uuid.UUID) -> ServerInventory:
+        response_data = await self.execute_prompt(server_id, DISCOVERY_PROMPT)
         
         raw_text = None
         try:
@@ -83,33 +85,49 @@ class AgentService:
 
         if not raw_text:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Failed to extract assistant response from payload."
             )
             
-        # Attempt to strip markdown if LLM accidentally added it
-        clean_text = raw_text.strip()
-        if clean_text.startswith("```json"):
-            clean_text = clean_text[7:]
-        elif clean_text.startswith("```"):
-            clean_text = clean_text[3:]
-        if clean_text.endswith("```"):
-            clean_text = clean_text[:-3]
-        clean_text = clean_text.strip()
-        
         try:
-            parsed = json.loads(clean_text)
+            parsed = json.loads(raw_text)
         except json.JSONDecodeError:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Assistant returned invalid JSON."
             )
             
-        if not all(k in parsed for k in ("hostname", "summary", "services")):
+        if not isinstance(parsed, dict):
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="JSON missing required keys (hostname, summary, services)."
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="JSON response must be an object."
             )
+            
+        if not isinstance(parsed.get("hostname"), str):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Validation failed: hostname is missing or not a string."
+            )
+            
+        if not isinstance(parsed.get("summary"), str):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Validation failed: summary is missing or not a string."
+            )
+            
+        services = parsed.get("services")
+        if not isinstance(services, dict):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Validation failed: services is missing or not a dictionary."
+            )
+            
+        for k, v in services.items():
+            if not isinstance(v, bool):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Validation failed: service '{k}' value must be a boolean."
+                )
             
         # DB Update (Idempotent)
         inventory = self.repository.db.query(ServerInventory).filter(ServerInventory.server_id == server_id).first()
@@ -119,16 +137,11 @@ class AgentService:
             
         inventory.hostname = parsed["hostname"]
         inventory.summary = parsed["summary"]
-        inventory.services = parsed["services"]
+        inventory.services = services
         inventory.raw_response = raw_text
         
         self.repository.db.commit()
         self.repository.db.refresh(inventory)
         
-        return {
-            "server_id": inventory.server_id,
-            "hostname": inventory.hostname,
-            "summary": inventory.summary,
-            "services": inventory.services,
-            "updated_at": inventory.updated_at
-        }
+        return inventory
+
