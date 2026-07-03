@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from models.server import Server
+from models.server_inventory import ServerInventory
 
 
 class ServerRepository:
@@ -77,3 +78,27 @@ class ServerRepository:
         self.db.commit()
 
         return server
+
+    def get_inventory(self, server_id: uuid.UUID) -> ServerInventory | None:
+        """Retrieve inventory for a server."""
+        return self.db.query(ServerInventory).filter(ServerInventory.server_id == server_id).first()
+        
+    def upsert_inventory(self, server_id: uuid.UUID, hostname: str, summary: str, services: dict, raw_response: str) -> ServerInventory:
+        """Upsert server inventory in an idempotent way."""
+        inventory = self.get_inventory(server_id)
+        if not inventory:
+            inventory = ServerInventory(server_id=server_id)
+            self.db.add(inventory)
+            
+        inventory.hostname = hostname
+        inventory.summary = summary
+        inventory.services = services
+        inventory.raw_response = raw_response
+        
+        try:
+            self.db.commit()
+            self.db.refresh(inventory)
+            return inventory
+        except Exception:
+            self.db.rollback()
+            raise
