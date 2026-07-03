@@ -1,5 +1,6 @@
 import uuid
 import json
+import logging
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -62,6 +63,9 @@ DISPLAY_NAMES = {
     "wings": "Wings"
 }
 
+REQUIRED_SERVICES = list(DISPLAY_NAMES.keys())
+
+logger = logging.getLogger(__name__)
 
 class AgentService:
     def __init__(self, db: Session):
@@ -97,28 +101,26 @@ class AgentService:
         finally:
             await client.close()
 
+    def _extract_output_text(self, response_data: dict) -> str:
+        try:
+            for message in response_data.get("output", []):
+                if message.get("type") == "message" or message.get("role") == "assistant":
+                    for content in message.get("content", []):
+                        if content.get("type") == "output_text" and content.get("text"):
+                            return content["text"]
+        except Exception as e:
+            logger.error(f"Error extracting output text: {e}")
+            
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to extract assistant response from payload."
+        )
+
     async def run_discovery(self, server_id: uuid.UUID) -> ServerInventory:
         response_data = await self.execute_prompt(server_id, DISCOVERY_PROMPT)
         
-        raw_text = None
-        try:
-            outputs = response_data.get("output", [])
-            for out in outputs:
-                if out.get("type") == "message" or out.get("role") == "assistant":
-                    for content_item in out.get("content", []):
-                        if content_item.get("type") == "output_text":
-                            raw_text = content_item.get("text")
-                            break
-                    if raw_text:
-                        break
-        except Exception:
-            pass
-
-        if not raw_text:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to extract assistant response from payload."
-            )
+        raw_text = self._extract_output_text(response_data)
+        logger.debug(f"Raw discovery response for server {server_id}:\n{raw_text}")
             
         clean_text = raw_text.strip()
         if clean_text.startswith("```json"):
@@ -131,39 +133,58 @@ class AgentService:
             
         try:
             parsed = json.loads(clean_text)
-        except json.JSONDecodeError:
+            logger.debug(f"Parsed JSON for server {server_id}: {parsed}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed for server {server_id}: {e}\nCleaned text: {clean_text}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Assistant returned invalid JSON."
+                detail="Invalid JSON returned by assistant."
             )
             
         if not isinstance(parsed, dict):
+            logger.error(f"Parsed JSON is not a dictionary for server {server_id}. Type: {type(parsed)}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="JSON response must be an object."
             )
             
-        if not isinstance(parsed.get("hostname"), str):
+        hostname = parsed.get("hostname")
+        if not isinstance(hostname, str):
+            logger.error(f"Validation failed: hostname missing or not a string for server {server_id}.")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Validation failed: hostname is missing or not a string."
+                detail="Validation failed: hostname missing."
             )
             
         services = parsed.get("services")
         if not isinstance(services, dict):
+            logger.error(f"Validation failed: services missing or not a dictionary for server {server_id}.")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Validation failed: services is missing or not a dictionary."
+                detail="Validation failed: services missing."
             )
             
-        for k, v in services.items():
-            if not isinstance(v, bool):
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Validation failed: service '{k}' value must be a boolean."
-                )
+        normalized_services = {}
+        for k in REQUIRED_SERVICES:
+            val = services.get(k, False)
+            if isinstance(val, bool):
+                normalized_services[k] = val
+            elif isinstance(val, int) and val in (0, 1):
+                normalized_services[k] = bool(val)
+            elif isinstance(val, str):
+                v_lower = val.strip().lower()
+                if v_lower in ("true", "yes", "1"):
+                    normalized_services[k] = True
+                elif v_lower in ("false", "no", "0"):
+                    normalized_services[k] = False
+                else:
+                    logger.warning(f"Unrecognized boolean value '{val}' for service '{k}' on server {server_id}. Defaulting to False.")
+                    normalized_services[k] = False
+            else:
+                logger.warning(f"Unrecognized type {type(val)} for service '{k}' on server {server_id}. Defaulting to False.")
+                normalized_services[k] = False
             
-        active_services = [DISPLAY_NAMES.get(k, k.replace('_', ' ').title()) for k, v in services.items() if v]
+        active_services = [DISPLAY_NAMES.get(k, k.replace('_', ' ').title()) for k, v in normalized_services.items() if v]
         if active_services:
             if len(active_services) > 1:
                 summary = f"Detected {', '.join(active_services[:-1])} and {active_services[-1]}."
@@ -172,23 +193,13 @@ class AgentService:
         else:
             summary = "No recognized services detected."
 
-        # DB Update (Idempotent)
-        inventory = self.repository.db.query(ServerInventory).filter(ServerInventory.server_id == server_id).first()
-        if not inventory:
-            inventory = ServerInventory(server_id=server_id)
-            self.repository.db.add(inventory)
-            
-        inventory.hostname = parsed["hostname"]
-        inventory.summary = summary
-        inventory.services = services
-        inventory.raw_response = raw_text
-        
-        try:
-            self.repository.db.commit()
-            self.repository.db.refresh(inventory)
-        except Exception:
-            self.repository.db.rollback()
-            raise
+        inventory = self.repository.upsert_inventory(
+            server_id=server_id,
+            hostname=hostname,
+            summary=summary,
+            services=normalized_services,
+            raw_response=raw_text
+        )
         
         return inventory
 
