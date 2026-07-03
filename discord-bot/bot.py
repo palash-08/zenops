@@ -1,5 +1,18 @@
 import discord
 from discord.ext import commands
+from core.config import settings
+
+def _get_activity(activity_type: str, activity_text: str):
+    activity_type = activity_type.lower().strip()
+    if activity_type == "watching":
+        return discord.Activity(type=discord.ActivityType.watching, name=activity_text)
+    elif activity_type == "listening":
+        return discord.Activity(type=discord.ActivityType.listening, name=activity_text)
+    elif activity_type == "competing":
+        return discord.Activity(type=discord.ActivityType.competing, name=activity_text)
+    else:
+        # Default to playing
+        return discord.Game(name=activity_text)
 
 def create_bot() -> commands.Bot:
     """
@@ -28,6 +41,8 @@ def create_bot() -> commands.Bot:
 
     @bot.event
     async def on_ready():
+        activity = _get_activity(settings.bot_activity_type, settings.bot_activity_text)
+        await bot.change_presence(activity=activity)
         print(f"✅ Logged in as {bot.user}")
 
     return bot
