@@ -12,6 +12,8 @@ if not ENV_PATH.exists():
 class Settings(BaseSettings):
     discord_bot_token: str
     backend_url: str = "http://127.0.0.1:8000"
+    bot_activity_type: str = "playing"
+    bot_activity_text: str = "Managing your infrastructure"
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
