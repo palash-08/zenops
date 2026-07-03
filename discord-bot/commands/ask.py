@@ -2,12 +2,20 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import httpx
+import io
 from services.backend_client import BackendClient
 
 class AskCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.backend = BackendClient()
+
+    def _create_error_embed(self, message: str) -> discord.Embed:
+        return discord.Embed(
+            title="Execution Failed",
+            description=message,
+            color=discord.Color.red()
+        )
 
     @app_commands.command(name="ask", description="Send a prompt to a ZenOps server")
     @app_commands.describe(
@@ -28,7 +36,9 @@ class AskCog(commands.Cog):
                     break
                     
             if not target_server:
-                await interaction.edit_original_response(content=f"❌ Server '{server}' not found.")
+                await interaction.edit_original_response(
+                    embed=self._create_error_embed(f"❌ Server '{server}' not found.")
+                )
                 return
 
             # 2. Execute the prompt
@@ -38,7 +48,6 @@ class AskCog(commands.Cog):
             )
             
             # 3. Extract assistant's final text
-            # OpenResponses schema: {"output": [{"role": "assistant", "content": [{"type": "output_text", "text": "..."}]}]}
             assistant_text = "No text returned."
             try:
                 outputs = response_data.get("output", [])
@@ -50,25 +59,40 @@ class AskCog(commands.Cog):
                 pass
             
             # 4. Display the response
-            # Ensure it fits within Discord's 2000 character limit
-            if len(assistant_text) > 1990:
-                assistant_text = assistant_text[:1990] + "..."
+            embed = discord.Embed(color=discord.Color.green())
+            embed.set_footer(text=f"Server: {target_server['name']}")
+            
+            if len(assistant_text) > 2000:
+                embed.description = "The response was too long to display and has been attached as a file."
+                file_bytes = io.BytesIO(assistant_text.encode("utf-8"))
+                discord_file = discord.File(file_bytes, filename="response.txt")
                 
-            await interaction.edit_original_response(content=assistant_text)
+                # edit_original_response with attachments requires `attachments=[...]`
+                await interaction.edit_original_response(embed=embed, attachments=[discord_file])
+            else:
+                embed.description = assistant_text
+                await interaction.edit_original_response(embed=embed)
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 502:
-                await interaction.edit_original_response(content="❌ Gateway unavailable or unreachable (HTTP 502).")
+                msg = "❌ Gateway unavailable or unreachable (HTTP 502)."
             elif e.response.status_code == 404:
-                await interaction.edit_original_response(content="❌ Server not found on backend (HTTP 404).")
+                msg = "❌ Server not found on backend (HTTP 404)."
             else:
-                await interaction.edit_original_response(content=f"❌ Backend returned an error: HTTP {e.response.status_code}")
+                msg = f"❌ Backend returned an error: HTTP {e.response.status_code}"
+            await interaction.edit_original_response(embed=self._create_error_embed(msg))
+            
         except httpx.TimeoutException:
-            await interaction.edit_original_response(content="❌ Request timed out. The backend or provider took too long to respond.")
+            msg = "❌ Request timed out. The backend or provider took too long to respond."
+            await interaction.edit_original_response(embed=self._create_error_embed(msg))
+            
         except httpx.RequestError as e:
-            await interaction.edit_original_response(content=f"❌ Failed to communicate with the backend: {e}")
+            msg = f"❌ Failed to communicate with the backend: {e}"
+            await interaction.edit_original_response(embed=self._create_error_embed(msg))
+            
         except Exception as e:
-            await interaction.edit_original_response(content=f"❌ An unexpected error occurred: {e}")
+            msg = f"❌ An unexpected error occurred: {e}"
+            await interaction.edit_original_response(embed=self._create_error_embed(msg))
 
 async def setup(bot):
     await bot.add_cog(AskCog(bot))
