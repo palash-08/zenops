@@ -12,11 +12,23 @@ class BackendClient:
             response.raise_for_status()
             return response.json()
             
+    async def register_server(self, payload: dict) -> dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{self.base_url}/servers", json=payload)
+            response.raise_for_status()
+            return response.json()
+            
     async def execute_prompt(self, server_id: str, prompt: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
                 f"{self.base_url}/servers/{server_id}/execute",
                 json={"prompt": prompt}
             )
+            response.raise_for_status()
+            return response.json()
+
+    async def run_discovery(self, server_id: str) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(f"{self.base_url}/servers/{server_id}/discover")
             response.raise_for_status()
             return response.json()

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from schemas.server import ServerCreate, ServerResponse, ServerExecuteRequest
+from schemas.server import ServerCreate, ServerResponse, ServerExecuteRequest, ServerInventorySchema
 from repositories.server_repository import ServerRepository
 from services.server_service import ServerService
 from services.agent_service import AgentService
@@ -44,3 +44,12 @@ async def execute_server(
 ):
     service = AgentService(db)
     return await service.execute_prompt(server_id, request.prompt)
+
+@router.post("/{server_id}/discover", response_model=ServerInventorySchema)
+async def discover_server(
+    server_id: uuid.UUID,
+    db: Session = Depends(get_db)
+):
+    service = AgentService(db)
+    return await service.run_discovery(server_id)
+
