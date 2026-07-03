@@ -14,7 +14,7 @@ if not ENV_PATH.exists():
     print("Please create a .env file in the project root.")
     sys.exit(1)
 
-print(f"✅ Found .env at {ENV_PATH}")
+print(f"Found .env at {ENV_PATH}")
 
 
 class Settings(BaseSettings):

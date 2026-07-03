@@ -31,3 +31,15 @@ class ServerExecuteRequest(BaseModel):
     """Schema used when triggering an execution on the server."""
 
     prompt: str
+
+
+class ServerInventorySchema(BaseModel):
+    """Schema for server inventory data."""
+    
+    server_id: UUID
+    hostname: str | None = None
+    summary: str | None = None
+    services: dict[str, bool] | None = None
+    updated_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)

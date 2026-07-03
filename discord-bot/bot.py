@@ -17,6 +17,7 @@ def create_bot() -> commands.Bot:
         """
         await bot.load_extension("commands.servers")
         await bot.load_extension("commands.ask")
+        await bot.load_extension("commands.zen")
         
         # Sync the slash commands with Discord
         try:
