@@ -1,4 +1,5 @@
 import uuid
+import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -8,13 +9,57 @@ from repositories.server_repository import ServerRepository
 from services.server_service import ServerService
 from services.agent_service import AgentService
 
+logger = logging.getLogger(__name__)
+
+MEMORY_INIT_PROMPT = """Create MEMORY.md if it does not exist, or overwrite it if it already exists.
+Use the built-in memory tools (do not simulate memory inside the response).
+Store the supplied text below as persistent memory.
+
+# ZenOps Agent
+
+You are the infrastructure agent for this Linux server.
+
+## Identity
+
+Managed By: ZenOps
+
+You are responsible only for this machine.
+
+Never ask:
+
+- Who am I?
+- Which server am I managing?
+
+## Responsibilities
+
+- Linux
+- Docker
+- Docker Compose
+- Networking
+- Logs
+- Infrastructure
+- DevOps
+
+Inspect first.
+
+Reason second.
+
+Answer last.
+
+Never guess.
+
+Always require confirmation before destructive operations.
+
+This file will be updated later by /zen discover with hostname, installed services and server role.
+"""
+
 router = APIRouter(
     prefix="/servers",
     tags=["Servers"]
 )
 
 @router.post("", response_model=ServerResponse)
-def create_server(server_in: ServerCreate, db: Session = Depends(get_db)):
+async def create_server(server_in: ServerCreate, db: Session = Depends(get_db)):
     # 1. Instantiate the repository, injecting the database session
     repository = ServerRepository(db)
     
@@ -22,7 +67,16 @@ def create_server(server_in: ServerCreate, db: Session = Depends(get_db)):
     service = ServerService(repository)
     
     # 3. Call the business logic and return the result
-    return service.register_server(server_in)
+    new_server = service.register_server(server_in)
+    
+    # 4. Initialize MEMORY.md on the newly registered server
+    try:
+        agent_service = AgentService(db)
+        await agent_service.execute_prompt(new_server.id, MEMORY_INIT_PROMPT)
+    except Exception as e:
+        logger.error(f"Failed to initialize MEMORY.md for server {new_server.id}: {e}")
+        
+    return new_server
 
 @router.get("", response_model=list[ServerResponse])
 def get_servers(db: Session = Depends(get_db)):
