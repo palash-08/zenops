@@ -26,8 +26,11 @@ class AgentService:
         
         try:
             response_data = await client.create_response(
-                payload={"prompt": prompt}
-            )
+                payload={
+                    "model": "openclaw/default",
+                    "input": prompt,
+    }
+)
             return response_data
         except OpenClawError as e:
             raise HTTPException(
