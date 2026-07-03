@@ -32,3 +32,8 @@ class BackendClient:
             response = await client.post(f"{self.base_url}/servers/{server_id}/discover")
             response.raise_for_status()
             return response.json()
+
+    async def delete_server(self, server_id: str) -> None:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.delete(f"{self.base_url}/servers/{server_id}")
+            response.raise_for_status()

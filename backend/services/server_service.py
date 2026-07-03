@@ -44,3 +44,11 @@ class ServerService:
         servers = self.repository.list_servers()
         # Convert all ORM models to Pydantic schemas before returning
         return [ServerResponse.model_validate(server) for server in servers]
+
+    def delete_server(self, server_id: uuid.UUID) -> None:
+        deleted_server = self.repository.delete_server(server_id)
+        if deleted_server is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Server not found."
+            )

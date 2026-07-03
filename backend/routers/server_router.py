@@ -1,6 +1,6 @@
 import uuid
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status, Response
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -72,7 +72,12 @@ async def create_server(server_in: ServerCreate, db: Session = Depends(get_db)):
     # 4. Initialize MEMORY.md on the newly registered server
     try:
         agent_service = AgentService(db)
-        await agent_service.execute_prompt(new_server.id, MEMORY_INIT_PROMPT)
+        
+        final_prompt = MEMORY_INIT_PROMPT
+        if server_in.context and server_in.context.strip():
+            final_prompt += f"\n\n## Server Context\n\n{server_in.context.strip()}"
+            
+        await agent_service.execute_prompt(new_server.id, final_prompt)
     except Exception as e:
         logger.error(f"Failed to initialize MEMORY.md for server {new_server.id}: {e}")
         
@@ -106,4 +111,12 @@ async def discover_server(
 ):
     service = AgentService(db)
     return await service.run_discovery(server_id)
+
+@router.delete("/{server_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_server(server_id: uuid.UUID, db: Session = Depends(get_db)):
+    repository = ServerRepository(db)
+    service = ServerService(repository)
+    service.delete_server(server_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 
