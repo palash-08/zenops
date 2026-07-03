@@ -12,6 +12,7 @@ class ServerCreate(BaseModel):
     tailscale_ip: str
     gateway_port: int
     gateway_token: str
+    context: str | None = None
 
 
 class ServerResponse(BaseModel):

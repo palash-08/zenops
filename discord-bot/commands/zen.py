@@ -7,6 +7,19 @@ import httpx
 import traceback
 import io
 
+DISPLAY_NAMES = {
+    "postgresql": "PostgreSQL",
+    "mysql": "MySQL",
+    "docker_compose": "Docker Compose",
+    "tailscale": "Tailscale",
+    "pterodactyl": "Pterodactyl",
+    "docker": "Docker",
+    "nginx": "Nginx",
+    "apache": "Apache",
+    "redis": "Redis",
+    "wings": "Wings"
+}
+
 def _create_embed(title: str, description: str, color: discord.Color) -> discord.Embed:
     return discord.Embed(title=title, description=description, color=color)
 
@@ -31,6 +44,13 @@ class ServerRegisterModal(discord.ui.Modal, title='Register New VPS'):
     
     description = discord.ui.TextInput(
         label='Optional Description',
+        style=discord.TextStyle.paragraph,
+        required=False
+    )
+    
+    server_context = discord.ui.TextInput(
+        label='Server Context',
+        placeholder="Describe this server's purpose or anything the agent should always remember...",
         style=discord.TextStyle.paragraph,
         required=False
     )
@@ -86,6 +106,10 @@ class ServerRegisterModal(discord.ui.Modal, title='Register New VPS'):
                 "gateway_token": self.gateway_token.value.strip()
             }
             
+            context_val = self.server_context.value.strip()
+            if context_val:
+                payload["context"] = context_val
+            
             response = await self.backend.register_server(payload)
             
             # 4. Better Success Embed
@@ -130,6 +154,69 @@ class ServerRegisterModal(discord.ui.Modal, title='Register New VPS'):
             await interaction.followup.send(embed=embed)
 
 
+class DeleteConfirmView(discord.ui.View):
+    def __init__(self, backend_client: BackendClient, server_id: str, server_name: str, owner_id: int):
+        super().__init__(timeout=60.0)
+        self.backend = backend_client
+        self.server_id = server_id
+        self.server_name = server_name
+        self.owner_id = owner_id
+        self.message = None
+
+    @discord.ui.button(label="Delete", style=discord.ButtonStyle.danger, emoji="🗑")
+    async def delete_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("You didn't initiate this deletion.", ephemeral=True)
+            return
+            
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(view=self)
+        
+        try:
+            await self.backend.delete_server(self.server_id)
+            embed = _create_embed(
+                "✅ Server Deleted",
+                "The server has been removed from ZenOps successfully.",
+                discord.Color.green()
+            )
+            await interaction.edit_original_response(embed=embed, view=None)
+        except httpx.HTTPStatusError as e:
+            traceback.print_exc()
+            if e.response.status_code == 404:
+                embed = _create_embed("Execution Failed", "Server not found (HTTP 404).", discord.Color.red())
+            elif e.response.status_code == 500:
+                embed = _create_embed("Execution Failed", "Backend returned an internal server error (HTTP 500).", discord.Color.red())
+            else:
+                embed = _create_embed("Execution Failed", f"Backend returned an error: HTTP {e.response.status_code}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed, view=None)
+        except httpx.TimeoutException:
+            traceback.print_exc()
+            embed = _create_embed("Network Timeout", "The request to the backend timed out.", discord.Color.red())
+            await interaction.edit_original_response(embed=embed, view=None)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Unexpected Error", f"An unexpected error occurred:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed, view=None)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("You didn't initiate this deletion.", ephemeral=True)
+            return
+            
+        embed = _create_embed("Deletion Cancelled", "Deletion cancelled.", discord.Color.greyple())
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                embed = self.message.embeds[0]
+                embed.set_footer(text="Deletion request expired.")
+                await self.message.edit(embed=embed, view=None)
+            except Exception:
+                pass
+
 class ZenGroup(app_commands.Group):
     def __init__(self):
         super().__init__(name="zen", description="ZenOps orchestration commands")
@@ -159,9 +246,25 @@ class ZenGroup(app_commands.Group):
                     discord.Color.yellow()
                 )
                 
-        for s in servers:
-            if s["id"] == server_arg or str(s["id"]).startswith(server_arg) or s["name"].lower() == server_arg.lower():
-                return s, None
+        exact_matches = [s for s in servers if s["id"] == server_arg or s["name"].lower() == server_arg.lower()]
+        if len(exact_matches) == 1:
+            return exact_matches[0], None
+            
+        prefix_matches = [s for s in servers if str(s["id"]).startswith(server_arg) or s["name"].lower().startswith(server_arg.lower())]
+        if len(prefix_matches) == 1:
+            return prefix_matches[0], None
+        elif len(prefix_matches) > 1:
+            if for_routing:
+                desc = "Multiple servers matched your query.\n\nAutomatic routing is not available yet.\n\nMatched servers:\n\n"
+                for s in prefix_matches:
+                    desc += f"• {s['name']}\n"
+                return None, _create_embed("Routing Not Implemented", desc, discord.Color.yellow())
+            else:
+                return None, _create_embed(
+                    "Multiple Servers Found",
+                    "Multiple servers matched your query. Please be more specific with the server name or UUID.",
+                    discord.Color.yellow()
+                )
                 
         return None, _create_embed("Server Not Found", f"Server '{server_arg}' not found.", discord.Color.red())
 
@@ -276,7 +379,7 @@ class ZenGroup(app_commands.Group):
             embed.add_field(name="Hostname", value=hostname, inline=False)
             
             services = inventory_data.get("services", {})
-            services_text = "\n".join([f"• {k.replace('_', ' ').title()}" for k, v in services.items() if v])
+            services_text = "\n".join([f"• {DISPLAY_NAMES.get(k, k.replace('_', ' ').title())}" for k, v in services.items() if v])
             if not services_text:
                 services_text = "No services detected."
             
@@ -314,6 +417,52 @@ class ZenGroup(app_commands.Group):
             embed = _create_embed("Unexpected Error", f"An unexpected error occurred:\n{e}", discord.Color.red())
             await interaction.edit_original_response(content=None, embed=embed)
 
+    @app_commands.command(name="delete", description="Remove a server from ZenOps")
+    @app_commands.describe(server="The name or UUID of the server (optional if only one exists)")
+    async def delete(self, interaction: discord.Interaction, server: str = None):
+        await interaction.response.defer()
+        
+        try:
+            servers = await self.backend.get_servers()
+            
+            target_server, error_embed = self._resolve_server(servers, server, for_routing=False)
+            if error_embed:
+                await interaction.edit_original_response(embed=error_embed)
+                return
+                
+            embed = _create_embed(
+                "⚠ Confirm Server Deletion",
+                "This only removes the server from ZenOps.\nThe remote VPS, OpenClaw and Tailscale will NOT be modified.",
+                discord.Color.red()
+            )
+            embed.add_field(name="Server Name", value=target_server["name"], inline=False)
+            embed.add_field(name="Server UUID", value=f"`{target_server['id']}`", inline=False)
+            
+            view = DeleteConfirmView(self.backend, target_server["id"], target_server["name"], interaction.user.id)
+            msg = await interaction.edit_original_response(embed=embed, view=view)
+            view.message = msg
+            
+        except httpx.HTTPStatusError as e:
+            traceback.print_exc()
+            if e.response.status_code == 500:
+                embed = _create_embed("Execution Failed", "Backend returned an internal server error (HTTP 500).", discord.Color.red())
+            elif e.response.status_code == 502:
+                embed = _create_embed("Execution Failed", "Gateway is unavailable, or the assistant returned an invalid/malformed response (HTTP 502).", discord.Color.red())
+            else:
+                embed = _create_embed("Execution Failed", f"Backend returned an error: HTTP {e.response.status_code}", discord.Color.red())
+            await interaction.edit_original_response(content=None, embed=embed)
+        except httpx.TimeoutException:
+            traceback.print_exc()
+            embed = _create_embed("Network Timeout", "The request to the backend timed out.", discord.Color.red())
+            await interaction.edit_original_response(content=None, embed=embed)
+        except httpx.RequestError as e:
+            traceback.print_exc()
+            embed = _create_embed("Network Error", f"Failed to communicate with the backend:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(content=None, embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Unexpected Error", f"An unexpected error occurred:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(content=None, embed=embed)
 
 class ZenCog(commands.Cog):
     def __init__(self, bot):
