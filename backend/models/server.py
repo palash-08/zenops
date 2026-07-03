@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, DateTime
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 
 from core.database import Base
 
@@ -15,6 +16,13 @@ class Server(Base):
     gateway_port = Column(Integer, nullable=False)
     gateway_token = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    inventory = relationship(
+        "ServerInventory",
+        back_populates="server",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
 
     @property
     def gateway_url(self) -> str:
