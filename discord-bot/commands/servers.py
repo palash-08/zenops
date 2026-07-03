@@ -16,18 +16,31 @@ class ServersCog(commands.Cog):
             servers = await self.backend.get_servers()
             
             if not servers:
-                await interaction.followup.send("No servers are currently registered.")
+                embed = discord.Embed(
+                    title="Registered ZenOps Servers",
+                    description="No servers are currently registered.",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed)
                 return
 
-            response_text = "**Registered ZenOps Servers:**\n\n"
+            embed = discord.Embed(
+                title="Registered ZenOps Servers",
+                color=discord.Color.blue()
+            )
+            
             for server in servers:
-                response_text += f"**{server['name']}**\n"
-                if server.get('description'):
-                    response_text += f"*{server['description']}*\n"
-                response_text += f"- **Tailscale IP:** `{server['tailscale_ip']}`\n"
-                response_text += f"- **Gateway Port:** `{server['gateway_port']}`\n\n"
+                server_id = str(server['id'])
+                short_id = server_id.split('-')[0]
+                desc = server.get('description') or "No description provided."
                 
-            await interaction.followup.send(response_text)
+                embed.add_field(
+                    name=f"🌐 {server['name']}",
+                    value=f"**ID:** `{short_id}`\n*{desc}*",
+                    inline=False
+                )
+                
+            await interaction.followup.send(embed=embed)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch servers: {e}")

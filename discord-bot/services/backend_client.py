@@ -11,3 +11,12 @@ class BackendClient:
             response = await client.get(f"{self.base_url}/servers")
             response.raise_for_status()
             return response.json()
+            
+    async def execute_prompt(self, server_id: str, prompt: str) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{self.base_url}/servers/{server_id}/execute",
+                json={"prompt": prompt}
+            )
+            response.raise_for_status()
+            return response.json()

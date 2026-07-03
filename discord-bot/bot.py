@@ -16,6 +16,7 @@ def create_bot() -> commands.Bot:
         We load our command modules (cogs) here.
         """
         await bot.load_extension("commands.servers")
+        await bot.load_extension("commands.ask")
         
         # Sync the slash commands with Discord
         try:
