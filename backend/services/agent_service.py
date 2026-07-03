@@ -9,27 +9,58 @@ from models.inventory import ServerInventory
 
 DISCOVERY_PROMPT = (
     "You are running directly on the managed Linux server.\n"
-    "Inspect this machine.\n"
-    "Identify the major infrastructure software that is installed or actively running.\n"
-    "Return ONLY valid JSON.\n"
-    "Example:\n"
+    "Use Linux shell commands ONLY.\n"
+    "Determine whether each of the following software packages is installed or currently running:\n"
+    "- Docker\n"
+    "- Docker Compose\n"
+    "- Nginx\n"
+    "- Apache\n"
+    "- PostgreSQL\n"
+    "- MySQL / MariaDB\n"
+    "- Redis\n"
+    "- Pterodactyl\n"
+    "- Wings\n"
+    "- Tailscale\n"
+    "Also determine the hostname.\n"
+    "Rules:\n"
+    "- Return true if the software is installed OR running.\n"
+    "- Return false otherwise.\n"
+    "- Never return version numbers.\n"
+    "- Never return explanatory text.\n"
+    "- Never return markdown.\n"
+    "- Never return code fences.\n"
+    "- Never explain your reasoning.\n"
+    "- Return ONLY the JSON object.\n"
+    "Required schema:\n"
     "{\n"
-    "  \"hostname\": \"instance-20250711-1158\",\n"
-    "  \"summary\": \"Ubuntu production server running Docker, Nginx and Pterodactyl.\",\n"
+    "  \"hostname\": \"...\",\n"
     "  \"services\": {\n"
     "    \"docker\": true,\n"
-    "    \"nginx\": true,\n"
-    "    \"postgresql\": true,\n"
+    "    \"docker_compose\": true,\n"
+    "    \"nginx\": false,\n"
+    "    \"apache\": false,\n"
+    "    \"postgresql\": false,\n"
+    "    \"mysql\": true,\n"
     "    \"redis\": true,\n"
-    "    \"pterodactyl\": true\n"
+    "    \"pterodactyl\": false,\n"
+    "    \"wings\": false,\n"
+    "    \"tailscale\": true\n"
     "  }\n"
     "}\n"
-    "Requirements:\n"
-    "- Return JSON only.\n"
-    "- No markdown.\n"
-    "- No explanations.\n"
-    "- No additional text."
 )
+
+DISPLAY_NAMES = {
+    "postgresql": "PostgreSQL",
+    "mysql": "MySQL",
+    "docker_compose": "Docker Compose",
+    "tailscale": "Tailscale",
+    "pterodactyl": "Pterodactyl",
+    "docker": "Docker",
+    "nginx": "Nginx",
+    "apache": "Apache",
+    "redis": "Redis",
+    "wings": "Wings"
+}
 
 
 class AgentService:
@@ -89,8 +120,17 @@ class AgentService:
                 detail="Failed to extract assistant response from payload."
             )
             
+        clean_text = raw_text.strip()
+        if clean_text.startswith("```json"):
+            clean_text = clean_text[7:]
+        elif clean_text.startswith("```"):
+            clean_text = clean_text[3:]
+        if clean_text.endswith("```"):
+            clean_text = clean_text[:-3]
+        clean_text = clean_text.strip()
+            
         try:
-            parsed = json.loads(raw_text)
+            parsed = json.loads(clean_text)
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -109,12 +149,6 @@ class AgentService:
                 detail="Validation failed: hostname is missing or not a string."
             )
             
-        if not isinstance(parsed.get("summary"), str):
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Validation failed: summary is missing or not a string."
-            )
-            
         services = parsed.get("services")
         if not isinstance(services, dict):
             raise HTTPException(
@@ -129,6 +163,15 @@ class AgentService:
                     detail=f"Validation failed: service '{k}' value must be a boolean."
                 )
             
+        active_services = [DISPLAY_NAMES.get(k, k.replace('_', ' ').title()) for k, v in services.items() if v]
+        if active_services:
+            if len(active_services) > 1:
+                summary = f"Detected {', '.join(active_services[:-1])} and {active_services[-1]}."
+            else:
+                summary = f"Detected {active_services[0]}."
+        else:
+            summary = "No recognized services detected."
+
         # DB Update (Idempotent)
         inventory = self.repository.db.query(ServerInventory).filter(ServerInventory.server_id == server_id).first()
         if not inventory:
@@ -136,12 +179,16 @@ class AgentService:
             self.repository.db.add(inventory)
             
         inventory.hostname = parsed["hostname"]
-        inventory.summary = parsed["summary"]
+        inventory.summary = summary
         inventory.services = services
         inventory.raw_response = raw_text
         
-        self.repository.db.commit()
-        self.repository.db.refresh(inventory)
+        try:
+            self.repository.db.commit()
+            self.repository.db.refresh(inventory)
+        except Exception:
+            self.repository.db.rollback()
+            raise
         
         return inventory
 
