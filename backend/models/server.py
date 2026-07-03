@@ -15,3 +15,7 @@ class Server(Base):
     gateway_port = Column(Integer, nullable=False)
     gateway_token = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def gateway_url(self) -> str:
+        return f"https://{self.tailscale_ip}:{self.gateway_port}"

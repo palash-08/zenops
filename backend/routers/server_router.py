@@ -3,9 +3,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from schemas.server import ServerCreate, ServerResponse
+from schemas.server import ServerCreate, ServerResponse, ServerExecuteRequest
 from repositories.server_repository import ServerRepository
 from services.server_service import ServerService
+from services.agent_service import AgentService
 
 router = APIRouter(
     prefix="/servers",
@@ -34,3 +35,12 @@ def get_server(server_id: uuid.UUID, db: Session = Depends(get_db)):
     repository = ServerRepository(db)
     service = ServerService(repository)
     return service.get_server(server_id)
+
+@router.post("/{server_id}/execute")
+async def execute_server(
+    server_id: uuid.UUID,
+    request: ServerExecuteRequest,
+    db: Session = Depends(get_db)
+):
+    service = AgentService(db)
+    return await service.execute_prompt(server_id, request.prompt)

@@ -25,3 +25,9 @@ class ServerResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ServerExecuteRequest(BaseModel):
+    """Schema used when triggering an execution on the server."""
+
+    prompt: str
