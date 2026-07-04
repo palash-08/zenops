@@ -68,42 +68,45 @@ class CogneeClient:
             raise CogneeError(f"Failed to create dataset: {e}")
 
     async def remember(self, text: str, dataset_id: str, self_improvement: bool = False) -> bool:
-        """
-        Store a new memory in Cognee.
-        Note: The Cognee OpenAPI /api/v1/remember does NOT currently support 'self_improvement'
-        as a field. Therefore, we explicitly call improve() in the background if requested.
-        """
-        try:
-            # /api/v1/remember accepts multipart/form-data for files
-            files = [
-                ("data", ("memory.txt", text.encode("utf-8"), "text/plain"))
-            ]
-            
-            form_data = {
-                "run_in_background": "true",
-                "datasetId": dataset_id
-            }
-            
-            # For multipart requests, we must omit Content-Type so httpx sets the boundary automatically
-            # We create a specific header dict overriding the client's default JSON Content-Type
-            headers = {"X-Api-Key": self.api_key}
+      try:
+        files = [
+            ("data", ("memory.txt", text.encode("utf-8"), "text/plain"))
+        ]
 
-            response = await self.client.post(
-                f"{self.api_url}/api/v1/remember", 
-                files=files,
-                data=form_data,
-                headers=headers
-            )
-            response.raise_for_status()
-            
-            if self_improvement:
-                await self.improve(dataset_id)
-                
-            return True
+        form_data = {
+            "run_in_background": "true",
+            "datasetId": dataset_id,
+        }
 
-        except Exception:
-           logger.exception("Cognee remember failed")
-           raise
+        headers = {
+            "X-Api-Key": self.api_key,
+        }
+
+        logger.info("=== Cognee Remember Request ===")
+        logger.info("URL: %s/api/v1/remember", self.api_url)
+        logger.info("Dataset ID: %s", dataset_id)
+        logger.info("Text length: %d", len(text))
+
+        response = await self.client.post(
+            f"{self.api_url}/api/v1/remember",
+            files=files,
+            data=form_data,
+            headers=headers,
+        )
+
+        logger.info("=== Cognee Remember Response ===")
+        logger.info("Status: %s", response.status_code)
+        logger.info("Body: %s", response.text)
+
+        response.raise_for_status()
+
+        if self_improvement:
+            await self.improve(dataset_id)
+
+        return True
+      except Exception:
+        logger.exception("Cognee remember failed")
+        raise
 
     async def recall(self, query: str, dataset_id: str, limit: int = 5) -> list[dict[str, Any]]:
         """Recall relevant memories from Cognee based on query and dataset_id."""
