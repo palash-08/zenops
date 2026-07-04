@@ -84,8 +84,6 @@ class CogneeClient:
                 "datasetId": dataset_id
             }
             
-            data_tuples = list(form_data.items())
-
             # For multipart requests, we must omit Content-Type so httpx sets the boundary automatically
             # We create a specific header dict overriding the client's default JSON Content-Type
             headers = {"X-Api-Key": self.api_key}
@@ -93,7 +91,7 @@ class CogneeClient:
             response = await self.client.post(
                 f"{self.api_url}/api/v1/remember", 
                 files=files,
-                data=data_tuples,
+                data=form_data,
                 headers=headers
             )
             response.raise_for_status()
@@ -102,9 +100,10 @@ class CogneeClient:
                 await self.improve(dataset_id)
                 
             return True
-        except Exception as e:
-            logger.error(f"Cognee remember failed: {e}")
-            raise CogneeError(f"Failed to store memory: {e}")
+
+        except Exception:
+           logger.exception("Cognee remember failed")
+           raise
 
     async def recall(self, query: str, dataset_id: str, limit: int = 5) -> list[dict[str, Any]]:
         """Recall relevant memories from Cognee based on query and dataset_id."""
