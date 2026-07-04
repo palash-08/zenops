@@ -8,6 +8,8 @@ from schemas.server import ServerCreate, ServerResponse, ServerExecuteRequest, S
 from repositories.server_repository import ServerRepository
 from services.server_service import ServerService
 from services.agent_service import AgentService
+from services.cognee_client import CogneeClient
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,24 @@ async def create_server(server_in: ServerCreate, db: Session = Depends(get_db)):
     
     # 3. Call the business logic and return the result
     new_server = service.register_server(server_in)
+    
+    # 3.5 Create Cognee dataset
+    try:
+        cognee = CogneeClient()
+        dataset_id = await cognee.create_dataset(f"server_{new_server.id}")
+        
+        # We need to update the actual database model since new_server is a Pydantic schema
+        server_model = repository.get_server_by_id(new_server.id)
+        if server_model:
+            server_model.cognee_dataset_id = dataset_id
+            db.commit()
+    except Exception as e:
+        logger.error(f"Failed to create Cognee dataset: {e}")
+        service.delete_server(new_server.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to provision memory dataset for server: {e}"
+        )
     
     # 4. Initialize MEMORY.md on the newly registered server
     try:

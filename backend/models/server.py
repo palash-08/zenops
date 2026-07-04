@@ -15,6 +15,7 @@ class Server(Base):
     tailscale_ip = Column(String, nullable=False)
     gateway_port = Column(Integer, nullable=False)
     gateway_token = Column(String, nullable=False)
+    cognee_dataset_id = Column(UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     inventory = relationship(

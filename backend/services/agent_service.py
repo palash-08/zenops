@@ -1,11 +1,13 @@
 import uuid
 import json
 import logging
+import asyncio
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from repositories.server_repository import ServerRepository
 from services.openclaw_client import OpenClawClient, OpenClawError
+from services.memory_service import MemoryService
 from models.inventory import ServerInventory
 
 DISCOVERY_PROMPT = (
@@ -70,6 +72,7 @@ logger = logging.getLogger(__name__)
 class AgentService:
     def __init__(self, db: Session):
         self.repository = ServerRepository(db)
+        self.memory_service = MemoryService()
 
     async def execute_prompt(self, server_id: uuid.UUID, prompt: str) -> dict:
         server = self.repository.get_server_by_id(server_id)
@@ -80,6 +83,20 @@ class AgentService:
                 detail="Server not found."
             )
 
+        memories = await self.memory_service.recall(server, prompt)
+        
+        augmented_prompt = (
+            "####################################\n"
+            "SERVER MEMORY\n"
+            "####################################\n\n"
+            "Relevant previous observations:\n\n"
+            f"{memories}\n\n"
+            "####################################\n"
+            "CURRENT REQUEST\n"
+            "####################################\n\n"
+            f"{prompt}"
+        )
+
         client = OpenClawClient(
             gateway_url=server.gateway_url,
             gateway_token=server.gateway_token
@@ -89,9 +106,16 @@ class AgentService:
             response_data = await client.create_response(
                 payload={
                     "model": "openclaw/default",
-                    "input": prompt,
-    }
-)
+                    "input": augmented_prompt,
+                }
+            )
+            
+            try:
+                response_text = self._extract_output_text(response_data)
+                asyncio.create_task(self.memory_service.remember_conversation(server, prompt, response_text))
+            except Exception as e:
+                logger.warning(f"Could not extract text for conversation memory: {e}")
+                
             return response_data
         except OpenClawError as e:
             raise HTTPException(
@@ -200,6 +224,17 @@ class AgentService:
             services=normalized_services,
             raw_response=raw_text
         )
+        
+        server = self.repository.get_server_by_id(server_id)
+        if server:
+            asyncio.create_task(
+                self.memory_service.remember_discovery(
+                    server=server,
+                    hostname=hostname,
+                    services=normalized_services,
+                    summary=summary
+                )
+            )
         
         return inventory
 
