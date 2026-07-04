@@ -20,7 +20,8 @@ print(f"Found .env at {ENV_PATH}")
 class Settings(BaseSettings):
     database_url: str
     discord_bot_token: str
-    cognee_api_key: str | None = None
+    cognee_api_url: str
+    cognee_api_key: str
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
