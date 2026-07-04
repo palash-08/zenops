@@ -24,7 +24,7 @@ class MemoryService:
         """
         try:
             if not server.cognee_dataset_id:
-                return "No memory dataset initialized for this server."
+                return ""
                 
             memories = await self.cognee.recall(
                 query=query,
@@ -33,7 +33,7 @@ class MemoryService:
             )
             
             if not memories:
-                return "No previous memories found."
+                return ""
                 
             formatted_memories = []
             for mem in memories:
@@ -42,7 +42,7 @@ class MemoryService:
                     formatted_memories.append(f"- {text}")
                     
             if not formatted_memories:
-                return "No previous memories found."
+                return ""
                 
             return "\n".join(formatted_memories)
             
@@ -56,10 +56,16 @@ class MemoryService:
         Should be executed in the background to avoid blocking execution.
         """
         try:
-            text = f"User:\n{prompt}\n\nAssistant:\n{response}"
+            timestamp = datetime.now(timezone.utc).isoformat()
+            hostname = server.inventory.hostname if server.inventory else "Unknown"
             
-            # Inventory might not exist if discovery hasn't run yet
-            hostname = server.inventory.hostname if server.inventory else None
+            text = (
+                f"Server ID: {server.id}\n"
+                f"Hostname: {hostname}\n"
+                f"Memory Type: conversation\n"
+                f"Timestamp: {timestamp}\n\n"
+                f"User:\n{prompt}\n\nAssistant:\n{response}"
+            )
             
             if not server.cognee_dataset_id:
                 logger.warning(f"Server {server.id} has no memory dataset initialized.")
@@ -81,8 +87,16 @@ class MemoryService:
         Should be executed in the background.
         """
         try:
+            timestamp = datetime.now(timezone.utc).isoformat()
             active_services = [k for k, v in services.items() if v]
-            text = f"Server hostname is {hostname}. Installed/Running services: {', '.join(active_services)}. Summary: {summary}"
+            
+            text = (
+                f"Server ID: {server.id}\n"
+                f"Hostname: {hostname}\n"
+                f"Memory Type: discovery\n"
+                f"Timestamp: {timestamp}\n\n"
+                f"Server hostname is {hostname}. Installed/Running services: {', '.join(active_services)}. Summary: {summary}"
+            )
             
             if not server.cognee_dataset_id:
                 logger.warning(f"Server {server.id} has no memory dataset initialized.")
