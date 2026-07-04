@@ -21,7 +21,6 @@ class CogneeClient:
         self.api_key = settings.cognee_api_key or ""
         self.headers = {
             "X-Api-Key": self.api_key,
-            "Content-Type": "application/json",
         }
         self.client = httpx.AsyncClient(headers=self.headers, timeout=10.0)
 
@@ -67,35 +66,45 @@ class CogneeClient:
             logger.error(f"Cognee create_dataset failed: {e}")
             raise CogneeError(f"Failed to create dataset: {e}")
 
-    async def remember(self, text: str, dataset_id: str, self_improvement: bool = False) -> bool:
-      try:
-        files = [
-            ("data", ("memory.txt", text.encode("utf-8"), "text/plain"))
-        ]
+    async def remember(
+    self,
+    text: str,
+    dataset_id: str,
+    self_improvement: bool = False,
+) -> bool:
+   
 
-        form_data = {
-            "run_in_background": "true",
-            "datasetId": dataset_id,
-        }
+     try:
+        logger.info("=== Cognee Remember Request ===")
+        logger.info("URL: %s/api/v1/remember", self.api_url)
+        logger.info("Dataset ID: %s", dataset_id)
+        logger.info("API Key: %r", self.api_key)
+        logger.info("Text length: %d", len(text))
 
         headers = {
             "X-Api-Key": self.api_key,
         }
 
-        logger.info("=== Cognee Remember Request ===")
-        logger.info("URL: %s/api/v1/remember", self.api_url)
-        logger.info("Dataset ID: %s", dataset_id)
-        logger.info("Text length: %d", len(text))
-
-        response = await self.client.post(
-            f"{self.api_url}/api/v1/remember",
-            files=files,
-            data=form_data,
-            headers=headers,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{self.api_url}/api/v1/remember",
+                headers=headers,
+                data={
+                    "datasetId": dataset_id,
+                    "run_in_background": "true",
+                },
+                files={
+                    "data": (
+                        "memory.txt",
+                        text,
+                        "text/plain",
+                    )
+                },
+            )
 
         logger.info("=== Cognee Remember Response ===")
         logger.info("Status: %s", response.status_code)
+        logger.info("Headers: %s", dict(response.headers))
         logger.info("Body: %s", response.text)
 
         response.raise_for_status()
@@ -104,7 +113,8 @@ class CogneeClient:
             await self.improve(dataset_id)
 
         return True
-      except Exception:
+
+     except Exception:
         logger.exception("Cognee remember failed")
         raise
 
