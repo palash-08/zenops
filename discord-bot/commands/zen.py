@@ -169,6 +169,9 @@ class DeleteConfirmView(discord.ui.View):
             await interaction.response.send_message("You didn't initiate this deletion.", ephemeral=True)
             return
             
+        self.is_completed = True
+        self.stop()
+            
         for child in self.children:
             child.disabled = True
         await interaction.response.edit_message(view=self)
@@ -205,10 +208,15 @@ class DeleteConfirmView(discord.ui.View):
             await interaction.response.send_message("You didn't initiate this deletion.", ephemeral=True)
             return
             
+        self.is_completed = True
+        self.stop()
+            
         embed = _create_embed("Deletion Cancelled", "Deletion cancelled.", discord.Color.greyple())
         await interaction.response.edit_message(embed=embed, view=None)
 
     async def on_timeout(self):
+        if getattr(self, 'is_completed', False):
+            return
         if self.message:
             try:
                 embed = self.message.embeds[0]
