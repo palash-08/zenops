@@ -464,6 +464,120 @@ class ZenGroup(app_commands.Group):
             embed = _create_embed("Unexpected Error", f"An unexpected error occurred:\n{e}", discord.Color.red())
             await interaction.edit_original_response(content=None, embed=embed)
 
+    @app_commands.command(name="bind", description="Bind this channel to a server")
+    @app_commands.describe(server="The name or UUID of the server")
+    async def bind(self, interaction: discord.Interaction, server: str):
+        await interaction.response.defer()
+        try:
+            servers = await self.backend.get_servers()
+            target_server, error_embed = self._resolve_server(servers, server, for_routing=False)
+            if error_embed:
+                await interaction.edit_original_response(embed=error_embed)
+                return
+                
+            await self.backend.bind_channel(str(interaction.channel_id), target_server["id"])
+            embed = _create_embed("✅ Channel Bound", f"This channel is now bound to {target_server['name']}.", discord.Color.green())
+            await interaction.edit_original_response(embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Error", f"Failed to bind channel:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed)
+
+    @app_commands.command(name="unbind", description="Unbind this channel")
+    async def unbind(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            await self.backend.unbind_channel(str(interaction.channel_id))
+            embed = _create_embed("✅ Channel Unbound", "This channel is no longer bound to any server.", discord.Color.green())
+            await interaction.edit_original_response(embed=embed)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                embed = _create_embed("Not Bound", "This channel is not currently bound.", discord.Color.yellow())
+                await interaction.edit_original_response(embed=embed)
+            else:
+                embed = _create_embed("Error", f"Failed to unbind channel:\n{e}", discord.Color.red())
+                await interaction.edit_original_response(embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Error", f"Failed to unbind channel:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed)
+
+    @app_commands.command(name="global", description="Mark this channel as global")
+    async def global_channel(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            guild_id = str(interaction.guild_id) if interaction.guild_id else "0"
+            await self.backend.set_global_channel(guild_id, str(interaction.channel_id))
+            embed = _create_embed("✅ Global Channel Set", "This channel is now the global management channel.", discord.Color.green())
+            await interaction.edit_original_response(embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Error", f"Failed to set global channel:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed)
+
+    context_group = app_commands.Group(name="context", description="Manage context limits")
+
+    @context_group.command(name="info", description="View context information")
+    async def context_info(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            guild_id = str(interaction.guild_id) if interaction.guild_id else "0"
+            info = await self.backend.get_context_info(str(interaction.channel_id), guild_id)
+            embed = _create_embed("ℹ️ Context Information", "", discord.Color.blue())
+            embed.add_field(name="Bound Server", value=info["server_name"], inline=False)
+            embed.add_field(name="Context Limit", value=str(info["chat_context_limit"]), inline=False)
+            embed.add_field(name="Stored Messages", value=str(info["message_count"]), inline=False)
+            embed.add_field(name="Is Global", value="Yes" if info["is_global"] else "No", inline=False)
+            await interaction.edit_original_response(embed=embed)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                embed = _create_embed("Not Bound", "This channel is not currently bound to any server.", discord.Color.yellow())
+                await interaction.edit_original_response(embed=embed)
+            else:
+                embed = _create_embed("Error", f"Failed to retrieve context info:\n{e}", discord.Color.red())
+                await interaction.edit_original_response(embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Error", f"Failed to retrieve context info:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed)
+
+    @context_group.command(name="set", description="Set context limit")
+    @app_commands.describe(limit="The new message context limit")
+    async def context_set(self, interaction: discord.Interaction, limit: int):
+        await interaction.response.defer()
+        if limit <= 0:
+            embed = _create_embed("Invalid Limit", "Limit must be a positive integer.", discord.Color.red())
+            await interaction.edit_original_response(embed=embed)
+            return
+            
+        try:
+            await self.backend.update_context_limit(str(interaction.channel_id), limit)
+            embed = _create_embed("✅ Context Limit Updated", f"The context limit is now {limit}.", discord.Color.green())
+            await interaction.edit_original_response(embed=embed)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                embed = _create_embed("Not Bound", "This channel is not currently bound.", discord.Color.yellow())
+                await interaction.edit_original_response(embed=embed)
+            else:
+                embed = _create_embed("Error", f"Failed to update context limit:\n{e}", discord.Color.red())
+                await interaction.edit_original_response(embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Error", f"Failed to update context limit:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed)
+
+    @app_commands.command(name="clearchatcontext", description="Clear short-term context for this channel")
+    async def clearchatcontext(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            await self.backend.clear_chat_context(str(interaction.channel_id))
+            embed = _create_embed("✅ Context Cleared", "Short-term chat context has been cleared. (Cognee memory and bindings are untouched).", discord.Color.green())
+            await interaction.edit_original_response(embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = _create_embed("Error", f"Failed to clear context:\n{e}", discord.Color.red())
+            await interaction.edit_original_response(embed=embed)
+
 class ZenCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot

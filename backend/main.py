@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from core.database import engine
 from routers.server_router import router as server_router
-
+from routers.discord_binding_router import router as binding_router, guild_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,6 +32,8 @@ app = FastAPI(
 
 # Register API routers
 app.include_router(server_router)
+app.include_router(binding_router)
+app.include_router(guild_router)
 
 
 @app.get("/")
