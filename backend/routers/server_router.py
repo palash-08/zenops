@@ -9,7 +9,7 @@ from repositories.server_repository import ServerRepository
 from services.server_service import ServerService
 from services.agent_service import AgentService
 from services.cognee_client import CogneeClient
-from fastapi import HTTPException
+from fastapi import APIRouter, Depends, status, Response, BackgroundTasks, HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +60,23 @@ router = APIRouter(
     tags=["Servers"]
 )
 
+async def _initialize_server_memory(server_id: uuid.UUID, context: str):
+    from core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        agent_service = AgentService(db)
+        final_prompt = MEMORY_INIT_PROMPT
+        if context and context.strip():
+            final_prompt += f"\n\n## Server Context\n\n{context.strip()}"
+            
+        await agent_service.execute_prompt(server_id, final_prompt)
+    except Exception as e:
+        logger.error(f"Failed to initialize MEMORY.md for server {server_id}: {e}")
+    finally:
+        db.close()
+
 @router.post("", response_model=ServerResponse)
-async def create_server(server_in: ServerCreate, db: Session = Depends(get_db)):
+async def create_server(server_in: ServerCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     # 1. Instantiate the repository, injecting the database session
     repository = ServerRepository(db)
     
@@ -89,17 +104,8 @@ async def create_server(server_in: ServerCreate, db: Session = Depends(get_db)):
             detail=f"Failed to provision memory dataset for server: {e}"
         )
     
-    # 4. Initialize MEMORY.md on the newly registered server
-    try:
-        agent_service = AgentService(db)
-        
-        final_prompt = MEMORY_INIT_PROMPT
-        if server_in.context and server_in.context.strip():
-            final_prompt += f"\n\n## Server Context\n\n{server_in.context.strip()}"
-            
-        await agent_service.execute_prompt(new_server.id, final_prompt)
-    except Exception as e:
-        logger.error(f"Failed to initialize MEMORY.md for server {new_server.id}: {e}")
+    # 4. Initialize MEMORY.md on the newly registered server in the background
+    background_tasks.add_task(_initialize_server_memory, new_server.id, server_in.context)
         
     return new_server
 

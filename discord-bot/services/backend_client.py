@@ -13,7 +13,7 @@ class BackendClient:
             return response.json()
             
     async def register_server(self, payload: dict) -> dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(f"{self.base_url}/servers", json=payload)
             response.raise_for_status()
             return response.json()

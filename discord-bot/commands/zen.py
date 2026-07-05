@@ -114,7 +114,7 @@ class ServerRegisterModal(discord.ui.Modal, title='Register New VPS'):
             
             # 4. Better Success Embed
             embed = discord.Embed(
-                title="✅ Server Registered",
+                title="✅ Server registered successfully.\n\nInitializing server memory in the background...",
                 color=discord.Color.green()
             )
             embed.add_field(name="Name", value=response["name"], inline=False)
