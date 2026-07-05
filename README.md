@@ -1,64 +1,348 @@
-# ZenOps
+# 🚀 ZenOps
 
-ZenOps is an AI-powered infrastructure assistant that helps developers manage their Linux servers using natural language.
+> **A Context-Aware AI DevOps Assistant built with OpenClaw, Cognee, and Discord**
 
-Instead of manually SSH-ing into multiple VPSs and remembering what changed on each server, you can simply ask ZenOps to investigate problems, perform routine maintenance, and keep track of previous incidents.
+ZenOps is an AI-powered DevOps assistant that enables engineers to manage Linux servers using natural language through Discord.
 
-Unlike traditional AI assistants, ZenOps remembers the history of your infrastructure. It can recall previous issues, successful fixes, and important context before making decisions, allowing it to become more helpful over time. It grows WITH you.
+Unlike traditional AI assistants that lose context between conversations, ZenOps combines **short-term conversational memory** with **long-term semantic infrastructure memory**, allowing it to remember both previous conversations and the state of managed servers.
 
-## What can it do?
+---
 
-- Manage multiple Linux servers from one place
-- Investigate server issues using AI
-- Execute approved maintenance tasks
-- Remember previous incidents and their resolutions
-- Learn from past interactions using persistent memory
-- Reduce repetitive DevOps work
+# ✨ Features
 
-## Example
+- 🤖 Natural language infrastructure management
+- 💬 Discord-native interface
+- 🖥️ Multi-server management
+- 🔗 Channel-to-server binding
+- 🧠 Long-term infrastructure memory using Cognee
+- 💭 Short-term conversational memory
+- 🔍 Infrastructure discovery
+- 🔒 Secure communication over Tailscale
+- ⚡ OpenClaw-powered command execution
 
-Instead of logging into your server and running multiple commands yourself:
+---
 
-```text
-SSH into server
-↓
+# 🎯 Why ZenOps?
 
-Check logs
-↓
+Managing multiple VPSs often involves:
 
-Inspect Docker
-↓
+- Remembering which server you're connected to
+- Switching between SSH sessions
+- Repeating context to AI assistants
+- Manually rediscovering infrastructure
 
-Restart services
-↓
+ZenOps solves this by giving every server an AI agent with persistent memory.
 
-Remember what happened
+Instead of remembering your infrastructure, **ZenOps remembers it for you.**
+
+---
+
+# 🏗️ Architecture
+
+```
+                        Discord
+
+                           │
+
+                           ▼
+
+                FastAPI Backend (ZenOps)
+
+      ┌─────────────────────────────────────┐
+      │                                     │
+      │  Authentication                     │
+      │  Server Registry                    │
+      │  Channel Bindings                   │
+      │  Prompt Construction                │
+      │  Conversation Memory               │
+      │  Cognee Integration                 │
+      │                                     │
+      └───────────────┬─────────────────────┘
+                      │
+          ┌───────────┴────────────┐
+          │                        │
+          ▼                        ▼
+
+     OpenClaw Agent          Cognee Memory
+
+          │
+
+          ▼
+
+    Managed Linux VPS
 ```
 
-You can simply ask:
+---
 
-```text
-"Investigate why my production server keeps restarting."
+# 🧠 Memory Architecture
 
-or
+ZenOps intentionally separates memory into two layers.
 
-"Restart Nginx on the production server."
+## Short-Term Memory
+
+Stored in PostgreSQL.
+
+Responsible for:
+
+- Recent conversation history
+- Contextual follow-up questions
+- Pronoun resolution
+- Channel-specific sessions
+
+Example:
+
+```
+Install nginx.
+
+Configure it for my React app in xyz directory.
+
+Restart it.
 ```
 
-ZenOps will:
+The assistant understands what **"it"** refers to.
 
-- Analyze the request
-- Recall relevant past incidents
-- Investigate the server
-- Suggest or perform an appropriate action (with approval where required)
-- Remember the outcome for future use
+---
 
-## Project Status
+## Long-Term Memory
 
-🚧 Currently under active development.
+Powered by Cognee.
 
-Core backend, AI integration, and infrastructure management features are being built incrementally.
+Stores semantic knowledge about servers, including:
 
-## License
+- Installed software
+- Infrastructure discoveries
+- Server metadata
+- Previous observations
 
-MIT
+Unlike chat history, this memory persists across future conversations.
+
+---
+
+# 💬 Discord Commands
+
+| Command | Description |
+|----------|-------------|
+| `/zen ask` | Ask the AI to perform infrastructure tasks or answer questions. |
+| `/zen discover` | Discover installed services and infrastructure details on the target VPS and store them in Cognee. |
+| `/zen register` | Register a new OpenClaw-enabled VPS. |
+| `/zen delete` | Remove a registered VPS. |
+| `/zen bind` | Bind a VPS to the current Discord channel for contextual conversations. |
+| `/zen unbind` | Remove the server binding from the current Discord channel. |
+
+---
+
+# 🔗 Channel Binding
+
+ZenOps introduces **channel-based server sessions**.
+
+Each Discord channel can be bound to exactly one server.
+
+Once bound:
+
+- every `/zen ask` automatically targets that VPS
+- conversations remain isolated per server
+- recent chat history is preserved
+- Cognee provides long-term infrastructure memory
+
+This enables natural conversations without repeatedly specifying the server.
+
+---
+
+# ⚙️ Technology Stack
+
+## Backend
+
+- FastAPI
+- Uvicorn
+- SQLAlchemy
+- PostgreSQL
+- Alembic
+- Pydantic
+- HTTPX
+- python-dotenv
+
+---
+
+## AI & Memory
+
+- OpenClaw
+- Cognee SDK
+- FastEmbed
+- Qwen3 8B (self-hosted)
+- Mistral Devstral
+
+---
+
+## Discord Bot
+
+- discord.py
+- Slash Commands
+- Discord Modals
+- Discord Views
+- HTTPX
+
+---
+
+## Infrastructure
+
+- Docker
+- Docker Compose
+- Tailscale
+- MagicDNS
+
+---
+
+# 🏆 Cognee Hangover Hackathon
+
+## Infrastructure Used During Development
+
+ZenOps was demonstrated using a distributed architecture consisting of multiple VPSs.
+
+### OpenClaw Layer
+
+- **2 independent OpenClaw instances**
+- Each running on its own Linux VPS
+- OpenClaw Gateway exposed **only through Tailscale**
+- Communication performed via **MagicDNS hostnames**
+- HTTP APIs bound exclusively to the Tailscale network (not publicly exposed)
+
+Both OpenClaw instances used the **Mistral Devstral** model for infrastructure reasoning and execution.
+
+---
+
+### Orchestration Layer
+
+A dedicated VPS hosted:
+
+- FastAPI Backend
+- Discord Bot
+- Cognee SDK
+
+This server acted as the central orchestration layer for all managed infrastructure.
+
+---
+
+### Memory Layer
+
+Cognee was configured to use:
+
+- **Self-hosted Qwen3 8B** running locally
+- **FastEmbed** as the embedding model
+
+Cognee stores semantic infrastructure knowledge that can be recalled across conversations.
+
+---
+
+### Scalability
+
+ZenOps is designed to support additional servers without architectural changes.
+
+When a new VPS is registered:
+
+1. It runs an OpenClaw instance.
+2. It connects securely over the existing Tailscale network.
+3. It registers with the FastAPI backend.
+4. Infrastructure discoveries are stored in the shared Cognee knowledge base.
+5. Future conversations can leverage the same centralized semantic memory.
+
+This allows every managed server to contribute to a unified infrastructure knowledge graph.
+
+---
+
+# 🔒 Security
+
+ZenOps follows a private-network-first architecture.
+
+- OpenClaw HTTP APIs are **never exposed publicly**.
+- Communication occurs only over **Tailscale**.
+- Services are bound to Tailscale interfaces.
+- MagicDNS is used instead of public IP addresses.
+- Infrastructure execution occurs only through registered OpenClaw agents.
+
+---
+
+# 🚀 Project Workflow
+
+```
+Discord User
+
+        │
+
+        ▼
+
+/zen ask
+
+        │
+
+        ▼
+
+Resolve Bound Server
+
+        │
+
+        ▼
+
+Retrieve Conversation Context
+
+        │
+
+        ▼
+
+Recall Cognee Memories
+
+        │
+
+        ▼
+
+Build Prompt
+
+        │
+
+        ▼
+
+OpenClaw
+
+        │
+
+        ▼
+
+Execute on VPS
+
+        │
+
+        ▼
+
+Return Response
+
+        │
+
+        ▼
+
+Update Conversation Context
+
+        │
+
+        ▼
+
+Background Cognee Memory Update
+```
+
+---
+
+# 🔮 Future Improvements
+
+- Multi-server orchestration
+- Infrastructure graph visualization
+- Kubernetes support
+- Role-based access control
+- Autonomous maintenance workflows
+- Web dashboard
+- Approval workflows for destructive operations
+
+---
+
+# 👨‍💻 Built For
+
+**Cognee Hangover Hackathon**
+
+ZenOps demonstrates how conversational AI, persistent semantic memory, and secure infrastructure execution can be combined to create an intelligent DevOps assistant capable of managing real-world Linux infrastructure.
