@@ -37,3 +37,51 @@ class BackendClient:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.delete(f"{self.base_url}/servers/{server_id}")
             response.raise_for_status()
+
+    async def bind_channel(self, channel_id: str, server_id: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.base_url}/internal/bindings/{channel_id}",
+                json={"server_id": server_id}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def unbind_channel(self, channel_id: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(f"{self.base_url}/internal/bindings/{channel_id}")
+            response.raise_for_status()
+            return response.json()
+
+    async def set_global_channel(self, guild_id: str, channel_id: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{self.base_url}/internal/guilds/{guild_id}/global",
+                json={"discord_channel_id": channel_id}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def update_context_limit(self, channel_id: str, limit: int) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{self.base_url}/internal/bindings/{channel_id}/context-limit",
+                json={"limit": limit}
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def clear_chat_context(self, channel_id: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(f"{self.base_url}/internal/bindings/{channel_id}/context")
+            response.raise_for_status()
+            return response.json()
+
+    async def get_context_info(self, channel_id: str, guild_id: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/internal/bindings/{channel_id}/context-info",
+                params={"guild_id": guild_id}
+            )
+            response.raise_for_status()
+            return response.json()
