@@ -22,7 +22,7 @@ class CogneeClient:
         self.headers = {
             "X-Api-Key": self.api_key,
         }
-        self.client = httpx.AsyncClient(headers=self.headers, timeout=10.0)
+        self.client = httpx.AsyncClient(headers=self.headers, timeout=60.0)
 
     async def close(self):
         """Close the underlying HTTP client."""
@@ -31,7 +31,7 @@ class CogneeClient:
     async def health(self) -> bool:
         """Check if the Cognee memory backend is accessible."""
         try:
-            response = await self.client.get(f"{self.api_url}/health", timeout=5.0)
+            response = await self.client.get(f"{self.api_url}/health", timeout=20.0)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -85,7 +85,7 @@ class CogneeClient:
             "X-Api-Key": self.api_key,
         }
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self.api_url}/api/v1/remember",
                 headers=headers,
