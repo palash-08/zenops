@@ -2,13 +2,16 @@ import uuid
 import json
 import logging
 import asyncio
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from repositories.server_repository import ServerRepository
 from services.openclaw_client import OpenClawClient, OpenClawError
 from services.memory_service import MemoryService
 from models.inventory import ServerInventory
+from services.execution_resolver import ExecutionResolver
+from services.prompt_builder import PromptBuilder
+from services.binding_service import BindingService
 
 DISCOVERY_PROMPT = (
     "You are running directly on the managed Linux server.\n"
@@ -71,8 +74,80 @@ logger = logging.getLogger(__name__)
 
 class AgentService:
     def __init__(self, db: Session):
+        self.db = db
         self.repository = ServerRepository(db)
         self.memory_service = MemoryService()
+        self.execution_resolver = ExecutionResolver(db)
+        self.binding_service = BindingService(db)
+        self.prompt_builder = PromptBuilder()
+
+    async def orchestrate_execution(self, guild_id: str, discord_channel_id: str, prompt: str, background_tasks: BackgroundTasks) -> dict:
+        # 1. Resolve Target
+        target = self.execution_resolver.resolve(guild_id, discord_channel_id)
+        
+        if target.mode == "GLOBAL":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Global orchestration has not yet been implemented."
+            )
+            
+        server_id = target.server_id
+        server = self.repository.get_server_by_id(server_id)
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Server not found."
+            )
+            
+        # 2. Load Context (if BOUND)
+        recent_messages = []
+        memories = ""
+        if target.mode == "BOUND":
+            recent_messages = self.binding_service.get_recent_messages(discord_channel_id)
+            # 3. Load Memories
+            memories = await self.memory_service.recall(server, prompt)
+        
+        # 4. Build Prompt
+        prompt_context = self.prompt_builder.build(server, memories, recent_messages, prompt)
+        
+        # 5. Execute
+        client = OpenClawClient(
+            gateway_url=server.gateway_url,
+            gateway_token=server.gateway_token
+        )
+        try:
+            response_data = await client.create_response(
+                payload={
+                    "model": "openclaw/default",
+                    "input": prompt_context.final_prompt,
+                }
+            )
+            
+            try:
+                response_text = self._extract_output_text(response_data)
+                
+                # 6. Persist Conversation (if BOUND)
+                if target.mode == "BOUND":
+                    try:
+                        self.binding_service.append_message(discord_channel_id, server_id, "user", prompt)
+                        self.binding_service.append_message(discord_channel_id, server_id, "assistant", response_text)
+                    except Exception as e:
+                        logger.error(f"Failed to persist conversation message: {e}")
+                    
+                    # 7. Trigger Background Memory
+                    background_tasks.add_task(self.memory_service.remember_conversation, server, prompt, response_text)
+            except Exception as e:
+                logger.warning(f"Could not extract text for conversation memory: {e}")
+                
+            # 8. Return Response
+            return response_data
+        except OpenClawError as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(e)
+            )
+        finally:
+            await client.close()
 
     async def execute_prompt(self, server_id: uuid.UUID, prompt: str) -> dict:
         server = self.repository.get_server_by_id(server_id)
@@ -85,29 +160,7 @@ class AgentService:
 
         memories = await self.memory_service.recall(server, prompt)
         
-        augmented_prompt = (
-            "You are ZenOps, an AI-powered DevOps assistant managing a live Linux server.\n\n"
-            "CRITICAL OPERATING RULES - HOW TO USE MEMORY VS. LIVE COMMANDS:\n"
-            "1. Live server state is ALWAYS your primary source of truth.\n"
-            "2. Use MEMORY ONLY for: previous discoveries, historical observations, user preferences, saved notes, UUIDs, infrastructure inventory, and long-term context.\n"
-            "3. If a question concerns ANYTHING that can change over time (e.g., 'Is Docker running?', 'Is Tailscale installed?', 'What is CPU usage?'), you MUST verify it using Linux shell commands before answering.\n"
-            "4. If both memory and live inspection are useful:\n"
-            "   - Recall the memory.\n"
-            "   - Verify it against the live server using shell commands.\n"
-            "   - Prefer the live information if they disagree.\n"
-            "   - Inform the user that the memory was outdated if necessary.\n"
-            "5. NEVER answer operational or state-based questions solely from memory.\n"
-            "6. Whenever shell commands are available, ALWAYS prefer verification over assumptions.\n\n"
-            "####################################\n"
-            "SERVER MEMORY\n"
-            "####################################\n\n"
-            "Relevant previous observations:\n\n"
-            f"{memories}\n\n"
-            "####################################\n"
-            "CURRENT REQUEST\n"
-            "####################################\n\n"
-            f"{prompt}"
-        )
+        prompt_context = self.prompt_builder.build(server, memories, [], prompt)
 
         client = OpenClawClient(
             gateway_url=server.gateway_url,
@@ -118,7 +171,7 @@ class AgentService:
             response_data = await client.create_response(
                 payload={
                     "model": "openclaw/default",
-                    "input": augmented_prompt,
+                    "input": prompt_context.final_prompt,
                 }
             )
             

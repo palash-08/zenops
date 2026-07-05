@@ -85,3 +85,16 @@ class BackendClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def execute_agent_prompt(self, guild_id: str, channel_id: str, prompt: str) -> dict:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{self.base_url}/agent/execute",
+                json={
+                    "guild_id": guild_id,
+                    "discord_channel_id": channel_id,
+                    "prompt": prompt
+                }
+            )
+            response.raise_for_status()
+            return response.json()

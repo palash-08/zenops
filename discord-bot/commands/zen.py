@@ -280,22 +280,17 @@ class ZenGroup(app_commands.Group):
         await interaction.response.defer()
         
         try:
-            # 1. Fetch all registered servers
-            servers = await self.backend.get_servers()
+            guild_id = str(interaction.guild_id) if interaction.guild_id else "0"
+            channel_id = str(interaction.channel_id)
             
-            # 2. Resolve target server
-            target_server, error_embed = self._resolve_server(servers, None, for_routing=True)
-            if error_embed:
-                await interaction.followup.send(embed=error_embed)
-                return
-            
-            # 4. Execute the prompt
-            response_data = await self.backend.execute_prompt(
-                server_id=target_server["id"],
+            # 1. Execute the prompt via the backend orchestrator
+            response_data = await self.backend.execute_agent_prompt(
+                guild_id=guild_id,
+                channel_id=channel_id,
                 prompt=prompt
             )
             
-            # 5. Extract assistant output
+            # 2. Extract assistant output
             assistant_text = "No text returned."
             try:
                 outputs = response_data.get("output", [])
@@ -309,12 +304,11 @@ class ZenGroup(app_commands.Group):
             except Exception:
                 pass
                 
-            # 6. Display in a Discord embed
+            # 3. Display in a Discord embed
             embed = discord.Embed(
                 title="🤖 ZenOps",
                 color=discord.Color.blue()
             )
-            embed.set_footer(text=f"Executed on:\n{target_server['name']}")
             
             if len(assistant_text) > 2000:
                 embed.description = "The response was too long to display and has been attached as a file."
@@ -328,7 +322,14 @@ class ZenGroup(app_commands.Group):
                 
         except httpx.HTTPStatusError as e:
             traceback.print_exc()
-            if e.response.status_code == 500:
+            if e.response.status_code == 400:
+                error_detail = "Bad Request"
+                try:
+                    error_detail = e.response.json().get("detail", error_detail)
+                except:
+                    pass
+                embed = _create_embed("Routing Error", error_detail, discord.Color.yellow())
+            elif e.response.status_code == 500:
                 embed = _create_embed("Execution Failed", "Backend returned an internal server error (HTTP 500).", discord.Color.red())
             elif e.response.status_code == 502:
                 embed = _create_embed("Execution Failed", "Gateway is unavailable, or the assistant returned an invalid/malformed response (HTTP 502).", discord.Color.red())
