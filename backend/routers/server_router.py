@@ -1,6 +1,5 @@
 import uuid
 import logging
-from fastapi import APIRouter, Depends, status, Response
 from sqlalchemy.orm import Session
 
 from core.database import get_db
@@ -101,7 +100,7 @@ async def create_server(server_in: ServerCreate, background_tasks: BackgroundTas
         service.delete_server(new_server.id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to provision memory dataset for server: {e}"
+            detail="Failed to provision memory dataset for server"
         )
     
     # 4. Initialize MEMORY.md on the newly registered server in the background

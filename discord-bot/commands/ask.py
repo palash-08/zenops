@@ -10,6 +10,9 @@ class AskCog(commands.Cog):
         self.bot = bot
         self.backend = BackendClient()
 
+    async def cog_unload(self):
+        await self.backend.close()
+
     def _create_error_embed(self, message: str) -> discord.Embed:
         return discord.Embed(
             title="Execution Failed",

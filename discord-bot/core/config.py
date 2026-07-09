@@ -12,6 +12,7 @@ if not ENV_PATH.exists():
 class Settings(BaseSettings):
     discord_bot_token: str
     backend_url: str = "http://127.0.0.1:8000"
+    internal_auth_token: str = "zenops-internal-secret"
     bot_activity_type: str = "playing"
     bot_activity_text: str = "Managing your infrastructure"
 
