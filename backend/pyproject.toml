@@ -1,0 +1,24 @@
+[project]
+name = "zenops-backend"
+version = "0.1.0"
+description = "ZenOps Backend API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "alembic",
+    "psycopg",
+    "pydantic",
+    "pydantic-settings",
+    "python-dotenv",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "psycopg-binary",
+]

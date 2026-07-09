@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     discord_bot_token: str
     cognee_api_url: str
     cognee_api_key: str
+    internal_auth_token: str = "zenops-internal-secret"
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,

@@ -1,10 +1,16 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from core.database import get_db
+from core.config import settings
 from services.binding_service import BindingService
+
+
+async def verify_internal_auth(x_internal_auth: str = Header(default=None, alias="X-Internal-Auth")):
+    if not x_internal_auth or x_internal_auth != settings.internal_auth_token:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 router = APIRouter(prefix="/internal/bindings", tags=["discord_internal"])
 guild_router = APIRouter(prefix="/internal/guilds", tags=["discord_internal"])
@@ -19,13 +25,13 @@ class SetGlobalRequest(BaseModel):
     discord_channel_id: str
 
 @router.post("/{channel_id}", status_code=status.HTTP_200_OK)
-def bind_channel(channel_id: str, payload: BindRequest, db: Session = Depends(get_db)):
+def bind_channel(channel_id: str, payload: BindRequest, db: Session = Depends(get_db), _=Depends(verify_internal_auth)):
     service = BindingService(db)
     binding = service.bind(channel_id, payload.server_id)
     return {"status": "success", "channel_id": channel_id, "server_id": binding.server_id}
 
 @router.delete("/{channel_id}", status_code=status.HTTP_200_OK)
-def unbind_channel(channel_id: str, db: Session = Depends(get_db)):
+def unbind_channel(channel_id: str, db: Session = Depends(get_db), _=Depends(verify_internal_auth)):
     service = BindingService(db)
     success = service.unbind(channel_id)
     if not success:
@@ -33,13 +39,13 @@ def unbind_channel(channel_id: str, db: Session = Depends(get_db)):
     return {"status": "success"}
 
 @guild_router.put("/{guild_id}/global", status_code=status.HTTP_200_OK)
-def set_global_channel(guild_id: str, payload: SetGlobalRequest, db: Session = Depends(get_db)):
+def set_global_channel(guild_id: str, payload: SetGlobalRequest, db: Session = Depends(get_db), _=Depends(verify_internal_auth)):
     service = BindingService(db)
     service.set_global(guild_id, payload.discord_channel_id)
     return {"status": "success", "global_channel_id": payload.discord_channel_id}
 
 @router.put("/{channel_id}/context-limit", status_code=status.HTTP_200_OK)
-def set_context_limit(channel_id: str, payload: SetContextLimitRequest, db: Session = Depends(get_db)):
+def set_context_limit(channel_id: str, payload: SetContextLimitRequest, db: Session = Depends(get_db), _=Depends(verify_internal_auth)):
     if payload.limit <= 0:
         raise HTTPException(status_code=400, detail="Limit must be a positive integer.")
     service = BindingService(db)
@@ -49,13 +55,13 @@ def set_context_limit(channel_id: str, payload: SetContextLimitRequest, db: Sess
     return {"status": "success", "limit": payload.limit}
 
 @router.delete("/{channel_id}/context", status_code=status.HTTP_200_OK)
-def clear_chat_context(channel_id: str, db: Session = Depends(get_db)):
+def clear_chat_context(channel_id: str, db: Session = Depends(get_db), _=Depends(verify_internal_auth)):
     service = BindingService(db)
     service.clear_chat_context(channel_id)
     return {"status": "success"}
 
 @router.get("/{channel_id}/context-info", status_code=status.HTTP_200_OK)
-def get_context_info(channel_id: str, guild_id: str, db: Session = Depends(get_db)):
+def get_context_info(channel_id: str, guild_id: str, db: Session = Depends(get_db), _=Depends(verify_internal_auth)):
     service = BindingService(db)
     binding = service.get_binding(channel_id)
     if not binding:

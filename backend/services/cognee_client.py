@@ -78,7 +78,7 @@ class CogneeClient:
         logger.info("=== Cognee Remember Request ===")
         logger.info("URL: %s/api/v1/remember", self.api_url)
         logger.info("Dataset ID: %s", dataset_id)
-        logger.info("API Key: %r", self.api_key)
+        logger.info("API Key: [REDACTED]")
         logger.info("Text length: %d", len(text))
 
         headers = {
@@ -104,7 +104,7 @@ class CogneeClient:
 
         logger.info("=== Cognee Remember Response ===")
         logger.info("Status: %s", response.status_code)
-        logger.info("Headers: %s", dict(response.headers))
+        logger.info("Headers: [REDACTED]")
         logger.info("Body: %s", response.text)
 
         response.raise_for_status()

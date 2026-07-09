@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -16,7 +16,7 @@ class Server(Base):
     gateway_port = Column(Integer, nullable=False)
     gateway_token = Column(String, nullable=False)
     cognee_dataset_id = Column(UUID(as_uuid=True), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     inventory = relationship(
         "ServerInventory",
