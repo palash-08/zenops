@@ -9,7 +9,7 @@ from repositories.server_repository import ServerRepository
 from services.openclaw_client import OpenClawClient, OpenClawError
 from services.memory_service import MemoryService
 from models.inventory import ServerInventory
-from services.execution_resolver import ExecutionResolver
+from services.execution_resolver import ExecutionResolver, ExecutionMode
 from services.prompt_builder import PromptBuilder
 from services.binding_service import BindingService
 
@@ -85,7 +85,7 @@ class AgentService:
         # 1. Resolve Target
         target = self.execution_resolver.resolve(guild_id, discord_channel_id)
         
-        if target.mode == "GLOBAL":
+        if target.mode == ExecutionMode.GLOBAL:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Global orchestration has not yet been implemented."
@@ -102,7 +102,7 @@ class AgentService:
         # 2. Load Context (if BOUND)
         recent_messages = []
         memories = ""
-        if target.mode == "BOUND":
+        if target.mode == ExecutionMode.BOUND:
             recent_messages = self.binding_service.get_recent_messages(discord_channel_id)
             # 3. Load Memories
             memories = await self.memory_service.recall(server, prompt)
@@ -127,7 +127,7 @@ class AgentService:
                 response_text = self._extract_output_text(response_data)
                 
                 # 6. Persist Conversation (if BOUND)
-                if target.mode == "BOUND":
+                if target.mode == ExecutionMode.BOUND:
                     try:
                         self.binding_service.append_message(discord_channel_id, server_id, "user", prompt)
                         self.binding_service.append_message(discord_channel_id, server_id, "assistant", response_text)
@@ -177,7 +177,7 @@ class AgentService:
             
             try:
                 response_text = self._extract_output_text(response_data)
-                asyncio.create_task(self.memory_service.remember_conversation(server, prompt, response_text))
+                _ = asyncio.create_task(self._safe_remember_conversation(server, prompt, response_text))
             except Exception as e:
                 logger.warning(f"Could not extract text for conversation memory: {e}")
                 
@@ -189,6 +189,18 @@ class AgentService:
             )
         finally:
             await client.close()
+
+    async def _safe_remember_conversation(self, server, prompt: str, response: str):
+        try:
+            await self.memory_service.remember_conversation(server, prompt, response)
+        except Exception as e:
+            logger.error(f"Background remember_conversation failed: {e}")
+
+    async def _safe_remember_discovery(self, server, hostname: str, services, summary: str):
+        try:
+            await self.memory_service.remember_discovery(server, hostname, services, summary)
+        except Exception as e:
+            logger.error(f"Background remember_discovery failed: {e}")
 
     def _extract_output_text(self, response_data: dict) -> str:
         try:
@@ -292,8 +304,8 @@ class AgentService:
         
         server = self.repository.get_server_by_id(server_id)
         if server:
-            asyncio.create_task(
-                self.memory_service.remember_discovery(
+            _ = asyncio.create_task(
+                self._safe_remember_discovery(
                     server=server,
                     hostname=hostname,
                     services=normalized_services,

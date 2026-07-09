@@ -8,6 +8,9 @@ class ServersCog(commands.Cog):
         self.bot = bot
         self.backend = BackendClient()
 
+    async def cog_unload(self):
+        await self.backend.close()
+
     @app_commands.command(name="servers", description="List all registered ZenOps servers")
     async def list_servers(self, interaction: discord.Interaction):
         await interaction.response.defer()

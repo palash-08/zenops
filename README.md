@@ -1,348 +1,159 @@
-# 🚀 ZenOps
+# ZenOps
 
-> **A Context-Aware AI DevOps Assistant built with OpenClaw, Cognee, and Discord**
+AI-powered DevOps assistant that manages Linux servers via natural language through Discord. Built with FastAPI, OpenClaw, and Cognee.
 
-ZenOps is an AI-powered DevOps assistant that enables engineers to manage Linux servers using natural language through Discord.
+## Quickstart
 
-Unlike traditional AI assistants that lose context between conversations, ZenOps combines **short-term conversational memory** with **long-term semantic infrastructure memory**, allowing it to remember both previous conversations and the state of managed servers.
+```bash
+git clone <repo> && cd zenops
 
----
+# Backend
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp ../.env.example ../.env   # edit with your values
+alembic upgrade head
+uvicorn main:app --reload
 
-# ✨ Features
-
-- 🤖 Natural language infrastructure management
-- 💬 Discord-native interface
-- 🖥️ Multi-server management
-- 🔗 Channel-to-server binding
-- 🧠 Long-term infrastructure memory using Cognee
-- 💭 Short-term conversational memory
-- 🔍 Infrastructure discovery
-- 🔒 Secure communication over Tailscale
-- ⚡ OpenClaw-powered command execution
-
----
-
-# 🎯 Why ZenOps?
-
-Managing multiple VPSs often involves:
-
-- Remembering which server you're connected to
-- Switching between SSH sessions
-- Repeating context to AI assistants
-- Manually rediscovering infrastructure
-
-ZenOps solves this by giving every server an AI agent with persistent memory.
-
-Instead of remembering your infrastructure, **ZenOps remembers it for you.**
-
----
-
-# 🏗️ Architecture
-
-```
-                        Discord
-
-                           │
-
-                           ▼
-
-                FastAPI Backend (ZenOps)
-
-      ┌─────────────────────────────────────┐
-      │                                     │
-      │  Authentication                     │
-      │  Server Registry                    │
-      │  Channel Bindings                   │
-      │  Prompt Construction                │
-      │  Conversation Memory               │
-      │  Cognee Integration                 │
-      │                                     │
-      └───────────────┬─────────────────────┘
-                      │
-          ┌───────────┴────────────┐
-          │                        │
-          ▼                        ▼
-
-     OpenClaw Agent          Cognee Memory
-
-          │
-
-          ▼
-
-    Managed Linux VPS
+# Discord Bot (separate terminal)
+cd discord-bot
+pip install -r ../.venv/lib/python3*/site-packages/  # or create its own venv
+python main.py
 ```
 
----
-
-# 🧠 Memory Architecture
-
-ZenOps intentionally separates memory into two layers.
-
-## Short-Term Memory
-
-Stored in PostgreSQL.
-
-Responsible for:
-
-- Recent conversation history
-- Contextual follow-up questions
-- Pronoun resolution
-- Channel-specific sessions
-
-Example:
+## Project Structure
 
 ```
-Install nginx.
-
-Configure it for my React app in xyz directory.
-
-Restart it.
+zenops/
+├── backend/                         # FastAPI API server
+│   ├── core/
+│   │   ├── config.py                # env-based settings
+│   │   └── database.py              # SQLAlchemy engine + session
+│   ├── models/                      # SQLAlchemy ORM models
+│   │   ├── server.py                # Server entity
+│   │   ├── binding.py               # Channel bindings + conversation messages
+│   │   └── inventory.py             # Discovered service inventory
+│   ├── schemas/                     # Pydantic request/response schemas
+│   ├── repositories/                # Data access layer
+│   │   └── server_repository.py
+│   ├── services/                    # Business logic
+│   │   ├── agent_service.py         # Orchestrates execution pipeline
+│   │   ├── server_service.py        # Server CRUD
+│   │   ├── binding_service.py       # Channel binding operations
+│   │   ├── execution_resolver.py    # Routes requests to bound/global/unbound targets
+│   │   ├── prompt_builder.py        # Constructs system prompts with context
+│   │   ├── memory_service.py        # Cognee-backed long-term memory (read/write)
+│   │   ├── cognee_client.py         # HTTP client for Cognee REST API
+│   │   └── openclaw_client.py       # HTTP client for OpenClaw gateway
+│   ├── routers/                     # FastAPI route handlers
+│   │   ├── server_router.py         # /servers/* CRUD + execute + discover
+│   │   ├── discord_binding_router.py# /internal/* bindings, guilds, context
+│   │   └── agent_router.py          # /agent/execute orchestrated dispatch
+│   ├── tests/
+│   │   ├── test_services.py         # Unit tests for PromptBuilder, ExecutionResolver, clients
+│   │   └── test_routes.py           # Route integration tests + auth tests
+│   ├── alembic/                     # Database migrations
+│   ├── main.py                      # FastAPI app entrypoint
+│   ├── pyproject.toml               # Project metadata + dev dependencies
+│   └── requirements.txt             # Runtime dependencies
+├── discord-bot/                     # Discord bot (discord.py)
+│   ├── core/config.py               # Bot env settings (token, backend URL)
+│   ├── commands/                    # Slash command handlers
+│   │   ├── zen.py                   # /zen group (ask, discover, register, bind, ...)
+│   │   ├── ask.py                   # /ask command
+│   │   ├── servers.py               # /servers list command
+│   │   ├── modals.py                # ServerRegisterModal
+│   │   ├── views.py                 # DeleteConfirmView
+│   │   └── utils.py                 # Shared error handler
+│   ├── services/backend_client.py   # Persistent httpx client for backend API
+│   ├── bot.py                       # Bot creation + cog loading
+│   ├── main.py                      # Entrypoint
+│   └── requirements.txt
+├── .env.example                     # Required environment variables
+├── .gitignore
+└── README.md
 ```
 
-The assistant understands what **"it"** refers to.
+## Configuration
 
----
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | -- | PostgreSQL connection string |
+| `DISCORD_BOT_TOKEN` | Yes | -- | Discord application token |
+| `COGNEE_API_URL` | Yes | -- | Cognee backend base URL |
+| `COGNEE_API_KEY` | Yes | -- | Cognee API key |
+| `INTERNAL_AUTH_TOKEN` | No | `zenops-internal-secret` | Shared secret for bot-to-backend auth |
+| `BACKEND_URL` | No | `http://127.0.0.1:8000` | Bot's backend target |
+| `BOT_ACTIVITY_TYPE` | No | `playing` | Discord presence type |
+| `BOT_ACTIVITY_TEXT` | No | `Managing your infrastructure` | Discord presence text |
 
-## Long-Term Memory
+## Development
 
-Powered by Cognee.
+```bash
+# Run tests (from repo root)
+source .venv/bin/activate
+python -m pytest backend/tests/ -v
 
-Stores semantic knowledge about servers, including:
+# Run backend
+uvicorn backend.main:app --reload --port 8000
 
-- Installed software
-- Infrastructure discoveries
-- Server metadata
-- Previous observations
+# Database migrations
+cd backend
+alembic revision --autogenerate -m "description"
+alembic upgrade head
+```
 
-Unlike chat history, this memory persists across future conversations.
+## Architecture
 
----
+```
+Discord  -->  discord-bot/  -->  FastAPI Backend  -->  OpenClaw Gateway  -->  Linux VPS
+                     |                        |
+                     |                   +--------+
+                     `-- X-Internal-Auth  | Cognee |
+                                         +--------+
+```
 
-# 💬 Discord Commands
+The execution pipeline for a `/zen ask` call:
+
+1. **ExecutionResolver** determines the target (bound channel, global, or unbound fallback)
+2. **PromptBuilder** assembles system prompt from server metadata, recent conversation, and Cognee memories
+3. **AgentService** sends the prompt to the OpenClaw gateway, persists conversation, and triggers background memory update
+4. Cognee memory updates run asynchronously via `BackgroundTasks` (does not block the response)
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Health check |
+| GET | `/servers` | List registered servers |
+| POST | `/servers` | Register a new server |
+| GET | `/servers/{id}` | Get server details |
+| POST | `/servers/{id}/execute` | Execute a prompt on a server |
+| POST | `/servers/{id}/discover` | Run infrastructure discovery |
+| DELETE | `/servers/{id}` | Remove a server |
+| POST | `/agent/execute` | Orchestrated execution (bound/global/unbound resolution) |
+| POST | `/internal/bindings/{channel}` | Bind Discord channel to server |
+| DELETE | `/internal/bindings/{channel}` | Unbind channel |
+| PUT | `/internal/bindings/{channel}/context-limit` | Set context limit |
+| DELETE | `/internal/bindings/{channel}/context` | Clear conversation context |
+| GET | `/internal/bindings/{channel}/context-info` | Get context metadata |
+| PUT | `/internal/guilds/{guild}/global` | Set global management channel |
+
+Internal routes require `X-Internal-Auth` header matching `INTERNAL_AUTH_TOKEN`.
+
+## Discord Commands
 
 | Command | Description |
-|----------|-------------|
-| `/zen ask` | Ask the AI to perform infrastructure tasks or answer questions. |
-| `/zen discover` | Discover installed services and infrastructure details on the target VPS and store them in Cognee. |
-| `/zen register` | Register a new OpenClaw-enabled VPS. |
-| `/zen delete` | Remove a registered VPS. |
-| `/zen bind` | Bind a VPS to the current Discord channel for contextual conversations. |
-| `/zen unbind` | Remove the server binding from the current Discord channel. |
-
----
-
-# 🔗 Channel Binding
-
-ZenOps introduces **channel-based server sessions**.
-
-Each Discord channel can be bound to exactly one server.
-
-Once bound:
-
-- every `/zen ask` automatically targets that VPS
-- conversations remain isolated per server
-- recent chat history is preserved
-- Cognee provides long-term infrastructure memory
-
-This enables natural conversations without repeatedly specifying the server.
-
----
-
-# ⚙️ Technology Stack
-
-## Backend
-
-- FastAPI
-- Uvicorn
-- SQLAlchemy
-- PostgreSQL
-- Alembic
-- Pydantic
-- HTTPX
-- python-dotenv
-
----
-
-## AI & Memory
-
-- OpenClaw
-- Cognee SDK
-- FastEmbed
-- Qwen3 8B (self-hosted)
-- Mistral Devstral
-
----
-
-## Discord Bot
-
-- discord.py
-- Slash Commands
-- Discord Modals
-- Discord Views
-- HTTPX
-
----
-
-## Infrastructure
-
-- Docker
-- Docker Compose
-- Tailscale
-- MagicDNS
-
----
-
-# 🏆 Cognee Hangover Hackathon
-
-## Infrastructure Used During Development
-
-ZenOps was demonstrated using a distributed architecture consisting of multiple VPSs.
-
-### OpenClaw Layer
-
-- **2 independent OpenClaw instances**
-- Each running on its own Linux VPS
-- OpenClaw Gateway exposed **only through Tailscale**
-- Communication performed via **MagicDNS hostnames**
-- HTTP APIs bound exclusively to the Tailscale network (not publicly exposed)
-
-Both OpenClaw instances used the **Mistral Devstral** model for infrastructure reasoning and execution.
-
----
-
-### Orchestration Layer
-
-A dedicated VPS hosted:
-
-- FastAPI Backend
-- Discord Bot
-- Cognee SDK
-
-This server acted as the central orchestration layer for all managed infrastructure.
-
----
-
-### Memory Layer
-
-Cognee was configured to use:
-
-- **Self-hosted Qwen3 8B** running locally
-- **FastEmbed** as the embedding model
-
-Cognee stores semantic infrastructure knowledge that can be recalled across conversations.
-
----
-
-### Scalability
-
-ZenOps is designed to support additional servers without architectural changes.
-
-When a new VPS is registered:
-
-1. It runs an OpenClaw instance.
-2. It connects securely over the existing Tailscale network.
-3. It registers with the FastAPI backend.
-4. Infrastructure discoveries are stored in the shared Cognee knowledge base.
-5. Future conversations can leverage the same centralized semantic memory.
-
-This allows every managed server to contribute to a unified infrastructure knowledge graph.
-
----
-
-# 🔒 Security
-
-ZenOps follows a private-network-first architecture.
-
-- OpenClaw HTTP APIs are **never exposed publicly**.
-- Communication occurs only over **Tailscale**.
-- Services are bound to Tailscale interfaces.
-- MagicDNS is used instead of public IP addresses.
-- Infrastructure execution occurs only through registered OpenClaw agents.
-
----
-
-# 🚀 Project Workflow
-
-```
-Discord User
-
-        │
-
-        ▼
-
-/zen ask
-
-        │
-
-        ▼
-
-Resolve Bound Server
-
-        │
-
-        ▼
-
-Retrieve Conversation Context
-
-        │
-
-        ▼
-
-Recall Cognee Memories
-
-        │
-
-        ▼
-
-Build Prompt
-
-        │
-
-        ▼
-
-OpenClaw
-
-        │
-
-        ▼
-
-Execute on VPS
-
-        │
-
-        ▼
-
-Return Response
-
-        │
-
-        ▼
-
-Update Conversation Context
-
-        │
-
-        ▼
-
-Background Cognee Memory Update
-```
-
----
-
-# 🔮 Future Improvements
-
-- Multi-server orchestration
-- Infrastructure graph visualization
-- Kubernetes support
-- Role-based access control
-- Autonomous maintenance workflows
-- Web dashboard
-- Approval workflows for destructive operations
-
----
-
-# 👨‍💻 Built For
-
-**Cognee Hangover Hackathon**
-
-ZenOps demonstrates how conversational AI, persistent semantic memory, and secure infrastructure execution can be combined to create an intelligent DevOps assistant capable of managing real-world Linux infrastructure.
+|---------|-------------|
+| `/zen ask <prompt>` | Execute a task via natural language |
+| `/zen discover [server]` | Detect installed services on a server |
+| `/zen register` | Open modal to register a new VPS |
+| `/zen delete [server]` | Remove a server from ZenOps |
+| `/zen bind <server>` | Bind channel to a server for context-aware chat |
+| `/zen unbind` | Remove channel binding |
+| `/zen global` | Set this channel as the global management channel |
+| `/zen context info` | View channel binding and message count |
+| `/zen context set <limit>` | Set conversation context limit |
+| `/zen clearchatcontext` | Clear short-term chat history |
+| `/ask <server> <prompt>` | Execute prompt on a specific server (legacy) |
+| `/servers` | List all registered servers |
