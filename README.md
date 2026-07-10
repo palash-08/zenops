@@ -1,4 +1,3 @@
-````markdown
 # 🚀 ZenOps
 
 > **A Context-Aware AI DevOps Assistant built with OpenClaw, Cognee, and Discord**
@@ -42,7 +41,7 @@ Instead of remembering your infrastructure, **ZenOps remembers it for you.**
 
 # 🏗️ Architecture
 
-```text
+```
                          Discord
                             │
                             ▼
@@ -66,7 +65,7 @@ Instead of remembering your infrastructure, **ZenOps remembers it for you.**
               │
               ▼
       Managed Linux VPS
-````
+```
 
 ---
 
@@ -389,5 +388,3 @@ ZenOps follows a private-network-first architecture.
 
 ZenOps demonstrates how conversational AI, persistent semantic memory, and secure infrastructure execution can be combined to create an intelligent DevOps assistant capable of managing real-world Linux infrastructure.
 
-```
-```
